@@ -7,16 +7,14 @@
 
 ## 🎯 概要
 
-**Lyric Video** は、MP3 音声ファイルとキーフレーム ZIP ファイルから **カラオケ字幕付き MP4 動画** を生成するツールです。
-
-ローカルで直接実行する **CLI モード** と、Google Cloud 上で動作する **Web アプリモード** の 2 通りで使えます。
+**Lyric Video** は、GCS に保存された MP3 音声ファイルとキーフレーム ZIP ファイルから **カラオケ字幕付き MP4 動画** を生成する Cloud Run Web アプリです。
 
 ---
 
-## 🏗 アーキテクチャ（Web アプリモード）
+## 🏗 アーキテクチャ
 
 ```
-ブラウザ
+ブラウザ（Google OAuth2 認証済み）
   │  GCS URL をフォームで入力
   ▼
 Cloud Run (FastAPI)
@@ -27,68 +25,14 @@ Cloud Tasks
   ▼
 Cloud Run (同一サービス / worker エンドポイント)
   ├─ GCS から audio.mp3 / keyframes.zip をダウンロード
-  ├─ align_subtitles.py でカラオケタイミング生成（省略可）
-  ├─ burn_subs.py で MP4 生成
+  ├─ Whisper でカラオケタイミング生成（ASS 未指定時）
+  ├─ PIL で字幕を焼き込み MP4 生成
   └─ GCS へアップロード → Slack 通知
 ```
 
 ---
 
-## 💎 特徴と設計思想
-
-### 🎤 Whisper による文字レベル自動アライメント（align_subtitles.py）
-
-- [stable-ts](https://github.com/jianfch/stable-ts) を使って Whisper の推論結果を文字レベルに分解します。
-- ZIP 内の ASS から歌詞テキストだけを抽出して Whisper にアライメントさせ、句読点・記号は直前の文字の `\k` に吸収させます。
-- 出力は pysubs2 互換の ASS ファイルで、スタイル情報は元ファイルから引き継ぎます。
-- **歌い出し対応**: 1行目のみ、元 ASS の開始時刻が Whisper の判定より **0〜3秒だけ早い**場合に限り、元 ASS の開始時刻を採用します。
-- **繰り返し歌唱対応**: 同じ歌詞を繰り返す場合、各行の終了時刻を次行開始直前まで延長します。
-
-### 🎤 ASS カラオケ字幕の完全再現（burn_subs.py）
-
-- `\k` タグを解析し、文字単位でハイライト色（黄）と待機色（白）を切り替えます。
-- **フォント**: macOS 標準の **ヒラギノ角ゴシック W7** を最優先で使用します。Linux (Docker) 環境では **Noto Sans CJK** にフォールバックします。
-
-### ⚡ 差分描画による高速処理
-
-- 字幕状態が変化するタイミングだけ描画するため、3 分の動画でも約 200 枚で済み、数十秒で完了します。
-
----
-
-## 🚀 クイックスタート（CLI モード）
-
-### 依存パッケージのインストール
-
-```sh
-pip install -r requirements.txt
-```
-
-> ffmpeg が別途必要です。
-> ```sh
-> brew install ffmpeg   # macOS
-> ```
-
-### 実行
-
-**精度重視（Whisper アライメントあり）:**
-
-```sh
-# ① タイミング生成
-python3 app/align_subtitles.py input/audio.mp3 input/keyframes.zip input/subtitles_aligned.ass
-
-# ② 動画生成
-python3 app/burn_subs.py input/audio.mp3 input/keyframes.zip output/output.mp4 --subs input/subtitles_aligned.ass
-```
-
-**簡易版（ZIP 内の ASS タイミングをそのまま使う）:**
-
-```sh
-python3 app/burn_subs.py input/audio.mp3 input/keyframes.zip output/output.mp4
-```
-
----
-
-## ☁️ Web アプリモード（Cloud Run）
+## ☁️ セットアップ
 
 ### 必要な環境変数
 
@@ -113,7 +57,12 @@ python3 app/burn_subs.py input/audio.mp3 input/keyframes.zip output/output.mp4
 
 ```sh
 pip install -r requirements.txt
-uvicorn app.main:app --reload
+
+export SESSION_SECRET=any-random-string
+export GOOGLE_CLIENT_ID=...
+export GOOGLE_CLIENT_SECRET=...
+
+uvicorn app.main:app --reload --port 8080
 # → http://localhost:8080
 ```
 
@@ -128,6 +77,9 @@ gcloud builds submit --config=cloudbuild.yaml \
   --substitutions=\
 _GCS_BUCKET=your-bucket,\
 _SERVICE_ACCOUNT_EMAIL=sa@project.iam.gserviceaccount.com,\
+_GOOGLE_CLIENT_ID=your-client-id,\
+_GOOGLE_CLIENT_SECRET=your-client-secret,\
+_SESSION_SECRET=your-random-secret,\
 _SLACK_WEBHOOK_URL=https://hooks.slack.com/services/...
 ```
 
@@ -135,47 +87,30 @@ _SLACK_WEBHOOK_URL=https://hooks.slack.com/services/...
 > - `roles/storage.objectAdmin`（GCS 読み書き）
 > - `roles/cloudtasks.enqueuer`（タスク投入）
 
-### エンドポイント
+---
+
+## 🔌 エンドポイント
 
 | メソッド | パス | 説明 |
 |---|---|---|
-| `GET` | `/` | 入力フォーム |
-| `POST` | `/` | タスクをキューに投入 |
-| `POST` | `/tasks/generate` | Cloud Tasks からの worker 呼び出し（OIDC 認証） |
+| `GET` | `/` | 入力フォーム（要ログイン） |
+| `POST` | `/` | タスクをキューに投入（要ログイン） |
+| `GET` | `/auth/login` | Google OAuth2 ログイン |
+| `GET` | `/auth/callback` | OAuth2 コールバック |
+| `GET` | `/auth/logout` | ログアウト |
+| `POST` | `/tasks/generate` | Cloud Tasks worker（OIDC 認証） |
 | `GET` | `/healthz` | ヘルスチェック |
 
 ---
 
-## ⚙️ CLI 引数
-
-### align_subtitles.py
-
-| 引数 | 必須 | 説明 |
-|---|---|---|
-| `audio.mp3` | ✅ | アライメント対象の音声ファイル |
-| `keyframes.zip` または `subtitles.ass` | ✅ | ZIP を渡すと内部の `subtitles.ass` を自動抽出 |
-| `output.ass` | ➖ | 出力 ASS ファイル名（省略時: `subtitles_aligned.ass`） |
-| `--model` | ➖ | Whisper モデルサイズ（省略時: `large-v3`） |
-
-### burn_subs.py
-
-| 引数 | 必須 | 説明 |
-|---|---|---|
-| `audio.mp3` | ✅ | BGM として使用する音声ファイル |
-| `keyframes.zip` | ✅ | PNG 画像・`inputs.txt`・`subtitles.ass` を含む ZIP |
-| `output.mp4` | ➖ | 出力ファイル名（省略時: `output.mp4`） |
-| `--subs <subtitles.ass>` | ➖ | ZIP 内の字幕を上書きする ASS ファイル |
-
----
-
-## 📦 ZIP ファイルの構成
+## 📦 入力 ZIP の構成
 
 ```
 keyframes.zip
 ├── cut_01.png
 ├── cut_02.png
 ├── ...
-├── inputs.txt       # 画像ファイル名と表示尺の定義
+├── inputs.txt       # 画像ファイル名と表示尺
 └── subtitles.ass    # ASS カラオケ字幕
 ```
 
@@ -200,6 +135,7 @@ duration 50.000
 | [pysubs2](https://pysubs2.readthedocs.io/) | ASS 字幕ファイルのパース |
 | [ffmpeg](https://ffmpeg.org/) | 動画エンコード・音声合成 |
 | [FastAPI](https://fastapi.tiangolo.com/) | Web サーバー |
+| [Authlib](https://docs.authlib.org/) | Google OAuth2 認証 |
 | [google-cloud-tasks](https://cloud.google.com/tasks) | 非同期タスクキュー |
 | [google-cloud-storage](https://cloud.google.com/storage) | GCS ファイル入出力 |
 

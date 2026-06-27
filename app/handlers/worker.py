@@ -4,6 +4,7 @@ import logging
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
+from starlette.concurrency import run_in_threadpool
 
 from app.domain.task import Task
 
@@ -31,7 +32,7 @@ async def process_task(request: Request):
 
     logger.info("Processing task job_id=%s", task.job_id)
     try:
-        output_uri = pipeline.run(task)
+        output_uri = await run_in_threadpool(pipeline.run, task)
         notifier.notify_complete(task.job_id, output_uri)
         logger.info("Task completed job_id=%s output=%s", task.job_id, output_uri)
         return JSONResponse({"job_id": task.job_id, "status": "complete", "output": output_uri})

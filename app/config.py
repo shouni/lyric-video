@@ -50,10 +50,17 @@ class Config:
             whisper_model=os.getenv("WHISPER_MODEL", "large-v3"),
             google_client_id=os.getenv("GOOGLE_CLIENT_ID", ""),
             google_client_secret=os.getenv("GOOGLE_CLIENT_SECRET", ""),
-            session_secret=os.getenv("SESSION_SECRET", ""),
+            session_secret=_require_env("SESSION_SECRET"),
             allowed_emails=_split_env("ALLOWED_EMAILS"),
             allowed_domains=_split_env("ALLOWED_DOMAINS"),
         )
+
+
+def _require_env(key: str) -> str:
+    value = os.getenv(key, "").strip()
+    if not value:
+        raise ValueError(f"{key} environment variable is required")
+    return value
 
 
 def _split_env(key: str) -> list[str]:
