@@ -90,11 +90,31 @@
     <a href="/jobs" class="btn btn-link text-secondary text-decoration-none">
       <i class="bi bi-arrow-left me-1"></i>履歴一覧へ戻る
     </a>
-    {% if signed_url %}
-    <a href="{{ signed_url }}" download="output.mp4" class="btn btn-outline-primary btn-sm">
-      <i class="bi bi-download me-1"></i>MP4 ダウンロード
-    </a>
-    {% endif %}
+    <div class="d-flex gap-2">
+      {% if signed_url %}
+      <a href="{{ signed_url }}" download="output.mp4" class="btn btn-outline-primary btn-sm">
+        <i class="bi bi-download me-1"></i>MP4 ダウンロード
+      </a>
+      {% endif %}
+      <button class="btn btn-outline-danger btn-sm"
+              onclick="deleteJob('{{ job.job_id }}', '{{ csrf_token }}')">
+        <i class="bi bi-trash me-1"></i>削除
+      </button>
+    </div>
   </div>
 </div>
+<script>
+async function deleteJob(jobId, csrfToken) {
+  if (!confirm(jobId + ' を削除しますか？\nGCS上のファイルも削除されます。')) return;
+  const resp = await fetch('/jobs/' + jobId, {
+    method: 'DELETE',
+    headers: { 'X-CSRF-Token': csrfToken },
+  });
+  if (resp.ok) {
+    window.location.href = '/jobs';
+  } else {
+    alert('削除に失敗しました: ' + resp.status);
+  }
+}
+</script>
 {% endblock %}
