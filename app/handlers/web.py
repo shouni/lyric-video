@@ -6,6 +6,8 @@ from dataclasses import asdict
 
 from flask import Blueprint, abort, current_app, render_template, request, session
 
+from app.adapters import gcs
+from app.domain.job import JobRecord
 from app.domain.task import Task, new_job_id
 
 logger = logging.getLogger(__name__)
@@ -13,20 +15,33 @@ web_bp = Blueprint("web", __name__)
 
 
 @web_bp.route("/", methods=["GET"])
+def home():
+    """ホームダッシュボードを表示し、最新ジョブ5件を一覧する。"""
+    cfg = current_app.config_obj
+    jobs = []
+    if cfg.gcs_bucket:
+        try:
+            jobs = gcs.list_job_metadata(cfg.default_output_prefix())[:5]
+        except Exception as exc:
+            logger.error("Failed to list jobs for home: %s", exc)
+    return render_template("home.html", jobs=jobs)
+
+
+@web_bp.route("/new", methods=["GET"])
 def get_form():
-    """入力フォームを表示し、初回アクセス時はCSRFトークンを発行する。"""
+    """新規作成フォームを表示し、初回アクセス時はCSRFトークンを発行する。"""
     cfg = current_app.config_obj
     if "csrf_token" not in session:
         session["csrf_token"] = secrets.token_hex(16)
     return render_template(
-        "index.html",
+        "new.html",
         default_output=cfg.default_output_prefix(),
         whisper_model=cfg.whisper_model,
         csrf_token=session["csrf_token"],
     )
 
 
-@web_bp.route("/", methods=["POST"])
+@web_bp.route("/new", methods=["POST"])
 def post_form():
     """フォーム送信を受け取り、入力値を検証してCloud Tasksへジョブを登録する。"""
     token = session.get("csrf_token")
@@ -48,9 +63,8 @@ def post_form():
     )
 
     def render_error(error: str, status: int):
-        """エラー内容を入力フォームへ戻して指定ステータスで返す。"""
         return render_template(
-            "index.html",
+            "new.html",
             error=error,
             default_output=cfg.default_output_prefix(),
             whisper_model=cfg.whisper_model,
@@ -72,4 +86,56 @@ def post_form():
         logger.error("Failed to enqueue task job_id=%s: %s", job_id, exc)
         return render_error(f"タスクのキュー追加に失敗しました: {exc}", 502)
 
+    _save_job_meta(JobRecord.from_task(task))
+
     return render_template("queued.html", job_id=job_id), 202
+
+
+@web_bp.route("/jobs")
+def job_list():
+    """ジョブ履歴一覧を表示する。"""
+    cfg = current_app.config_obj
+    jobs = []
+    error = None
+    if not cfg.gcs_bucket:
+        error = "GCS_BUCKET が未設定のため履歴を取得できません。"
+    else:
+        try:
+            jobs = gcs.list_job_metadata(cfg.default_output_prefix())
+        except Exception as exc:
+            logger.error("Failed to list jobs: %s", exc)
+            error = "履歴の取得に失敗しました。"
+    return render_template("jobs.html", jobs=jobs, error=error)
+
+
+@web_bp.route("/jobs/<job_id>")
+def job_detail(job_id: str):
+    """ジョブ詳細・動画プレーヤーを表示する。"""
+    cfg = current_app.config_obj
+    output_prefix = cfg.default_output_prefix()
+    meta_uri = f"{output_prefix.rstrip('/')}/{job_id}/meta.json"
+
+    try:
+        job = gcs.load_json(meta_uri)
+    except Exception as exc:
+        logger.error("Failed to load job %s: %s", job_id, exc)
+        abort(404)
+
+    signed_url = None
+    if job.get("output_uri") and cfg.service_account_email:
+        try:
+            signed_url = gcs.generate_signed_url(job["output_uri"], cfg.service_account_email)
+        except Exception as exc:
+            logger.error("Failed to generate signed URL job_id=%s: %s", job_id, exc)
+
+    return render_template("job_detail.html", job=job, signed_url=signed_url)
+
+
+def _save_job_meta(record: JobRecord) -> None:
+    if not record.output_prefix:
+        return
+    try:
+        meta_uri = f"{record.output_prefix.rstrip('/')}/{record.job_id}/meta.json"
+        gcs.save_json(record.to_dict(), meta_uri)
+    except Exception as exc:
+        logger.warning("Failed to save job metadata job_id=%s: %s", record.job_id, exc)
