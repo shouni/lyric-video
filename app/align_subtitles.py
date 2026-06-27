@@ -59,6 +59,12 @@ def main():
     # --- 元のASS読み込み（ZIP または ASS ファイルを受け付ける）---
     if args.subtitles_in.endswith(".zip"):
         with zipfile.ZipFile(args.subtitles_in) as zf:
+            names = zf.namelist()
+            if "subtitles.ass" not in names:
+                raise SystemExit(
+                    f"Error: keyframes.zip に subtitles.ass が含まれていません。"
+                    f" ZIP内のファイル: {names}"
+                )
             with zf.open("subtitles.ass") as f:
                 subs_orig = pysubs2.SSAFile.from_string(f.read().decode("utf-8"))
     else:
