@@ -36,7 +36,6 @@ def get_form():
         session["csrf_token"] = secrets.token_hex(16)
     return render_template(
         "new.html",
-        default_output=cfg.default_output_prefix(),
         whisper_model=cfg.whisper_model,
         csrf_token=session["csrf_token"],
     )
@@ -52,7 +51,7 @@ def post_form():
     cfg = current_app.config_obj
     queue = current_app.queue
 
-    output_prefix = request.form.get("output_prefix", "").strip() or cfg.default_output_prefix()
+    output_prefix = cfg.default_output_prefix()
     job_id = new_job_id("lyric")
     task = Task(
         job_id=job_id,
@@ -67,7 +66,6 @@ def post_form():
         return render_template(
             "new.html",
             error=error,
-            default_output=cfg.default_output_prefix(),
             whisper_model=cfg.whisper_model,
             csrf_token=session.get("csrf_token"),
         ), status

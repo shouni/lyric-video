@@ -50,17 +50,6 @@
             </select>
           </div>
 
-          <div class="mb-4">
-            <label class="form-label fw-semibold">
-              出力先 GCS パス
-              <span class="text-muted fw-normal">(省略可)</span>
-            </label>
-            <input type="text" class="form-control" name="output_prefix"
-                   placeholder="{{ default_output or 'gs://bucket/output/prefix' }}"
-                   value="{{ default_output }}">
-            <div class="form-text">出力 MP4 は &lt;prefix&gt;/&lt;job_id&gt;/output.mp4 に保存されます</div>
-          </div>
-
           <div class="d-grid">
             <button type="submit" class="btn btn-primary btn-lg">実行キューに追加</button>
           </div>
