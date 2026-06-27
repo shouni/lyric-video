@@ -90,6 +90,9 @@ db.sqlite3
 /var/tmp/
 *.iml
 
+# Whisper model cache
+.cache/whisper/
+
 # 入出力ファイル（バイナリ・生成物）
 /input/*
 !/input/.gitkeep

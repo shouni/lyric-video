@@ -1,0 +1,76 @@
+substitutions:
+  _ENV_PREFIX: 'develop'
+  _REGION: 'asia-northeast1'
+  _IMAGE_BASE: 'asia-northeast1-docker.pkg.dev'
+  _REPO_PATH: 'ap-repo/lyric-video'
+  _SERVICE_NAME: 'lyric-video'
+  _TAG: '${_ENV_PREFIX}-${SHORT_SHA}'
+  _CACHE_TAG: '${_ENV_PREFIX}-latest'
+  _GCS_BUCKET: ''
+  _CLOUD_TASKS_QUEUE_ID: 'lyric-video-queue'
+  _SERVICE_ACCOUNT_EMAIL: ''
+  _SLACK_WEBHOOK_URL: ''
+  _WHISPER_MODEL: 'large-v3'
+  _GOOGLE_CLIENT_ID: ''
+  _GOOGLE_CLIENT_SECRET: ''
+  _SESSION_SECRET: ''
+  _ALLOWED_EMAILS: ''
+  _ALLOWED_DOMAINS: ''
+
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'Pull Cache Image'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        docker pull ${_IMAGE_BASE}/${PROJECT_ID}/${_REPO_PATH}:${_CACHE_TAG} || exit 0
+
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'Build Container Image'
+    env:
+      - 'DOCKER_BUILDKIT=1'
+    args:
+      - 'build'
+      - '-t'
+      - '${_IMAGE_BASE}/${PROJECT_ID}/${_REPO_PATH}:${_TAG}'
+      - '-t'
+      - '${_IMAGE_BASE}/${PROJECT_ID}/${_REPO_PATH}:${_CACHE_TAG}'
+      - '--cache-from'
+      - '${_IMAGE_BASE}/${PROJECT_ID}/${_REPO_PATH}:${_CACHE_TAG}'
+      - '--build-arg'
+      - 'BUILDKIT_INLINE_CACHE=1'
+      - '.'
+
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'Push Image'
+    args:
+      - 'push'
+      - '${_IMAGE_BASE}/${PROJECT_ID}/${_REPO_PATH}:${_TAG}'
+
+  - name: 'gcr.io/cloud-builders/gcloud'
+    id: 'Deploy to Cloud Run'
+    entrypoint: 'gcloud'
+    args:
+      - 'run'
+      - 'deploy'
+      - '${_SERVICE_NAME}'
+      - '--image=${_IMAGE_BASE}/${PROJECT_ID}/${_REPO_PATH}:${_TAG}'
+      - '--region=${_REGION}'
+      - '--platform=managed'
+      - '--allow-unauthenticated'
+      - '--timeout=3600'
+      - '--memory=8Gi'
+      - '--cpu=4'
+      - '--update-env-vars'
+      - '^|^GCP_PROJECT_ID=${PROJECT_ID}|GCP_LOCATION_ID=${_REGION}|CLOUD_TASKS_QUEUE_ID=${_CLOUD_TASKS_QUEUE_ID}|GCS_BUCKET=${_GCS_BUCKET}|SERVICE_ACCOUNT_EMAIL=${_SERVICE_ACCOUNT_EMAIL}|SLACK_WEBHOOK_URL=${_SLACK_WEBHOOK_URL}|WHISPER_MODEL=${_WHISPER_MODEL}|GOOGLE_CLIENT_ID=${_GOOGLE_CLIENT_ID}|GOOGLE_CLIENT_SECRET=${_GOOGLE_CLIENT_SECRET}|SESSION_SECRET=${_SESSION_SECRET}|ALLOWED_EMAILS=${_ALLOWED_EMAILS}|ALLOWED_DOMAINS=${_ALLOWED_DOMAINS}'
+
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'Push Cache Image'
+    args:
+      - 'push'
+      - '${_IMAGE_BASE}/${PROJECT_ID}/${_REPO_PATH}:${_CACHE_TAG}'
+
+options:
+  machineType: 'E2_HIGHCPU_8'
+  logging: CLOUD_LOGGING_ONLY

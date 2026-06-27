@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lyric Video</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #f5f5f5;
+      color: #333;
+      min-height: 100vh;
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+      padding: 40px 16px;
+    }
+    .card {
+      background: #fff;
+      border-radius: 12px;
+      box-shadow: 0 2px 12px rgba(0,0,0,.08);
+      padding: 36px 40px;
+      width: 100%;
+      max-width: 600px;
+    }
+    h1 { font-size: 1.5rem; margin-bottom: 24px; }
+    .error {
+      background: #fff0f0;
+      border: 1px solid #f5c6cb;
+      border-radius: 6px;
+      color: #721c24;
+      padding: 12px 16px;
+      margin-bottom: 20px;
+      font-size: .9rem;
+    }
+    .field { margin-bottom: 18px; }
+    label {
+      display: block;
+      font-size: .85rem;
+      font-weight: 600;
+      margin-bottom: 6px;
+      color: #555;
+    }
+    label .optional { font-weight: 400; color: #999; margin-left: 4px; }
+    input[type=text], select {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      font-size: .95rem;
+      transition: border-color .15s;
+    }
+    input[type=text]:focus, select:focus {
+      outline: none;
+      border-color: #5c7cfa;
+      box-shadow: 0 0 0 3px rgba(92,124,250,.15);
+    }
+    .hint { font-size: .78rem; color: #999; margin-top: 4px; }
+    button[type=submit] {
+      width: 100%;
+      padding: 12px;
+      background: #5c7cfa;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      margin-top: 8px;
+      transition: background .15s;
+    }
+    button[type=submit]:hover { background: #4263eb; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;">
+      <h1 style="margin:0">🎵 Lyric Video</h1>
+      <a href="/auth/logout" style="font-size:.8rem;color:#999;text-decoration:none;">ログアウト</a>
+    </div>
+
+    {% if error %}
+    <div class="error">{{ error }}</div>
+    {% endif %}
+
+    <form method="post" action="/" style="margin-top:0">
+      <div class="field">
+        <label>Audio GCS URL</label>
+        <input type="text" name="audio_url" placeholder="gs://bucket/path/to/audio.mp3" required>
+        <p class="hint">MP3 ファイルの GCS パス</p>
+      </div>
+
+      <div class="field">
+        <label>Keyframes ZIP GCS URL</label>
+        <input type="text" name="keyframes_url" placeholder="gs://bucket/path/to/keyframes.zip" required>
+        <p class="hint">PNG・inputs.txt・subtitles.ass を含む ZIP</p>
+      </div>
+
+      <div class="field">
+        <label>
+          Pre-aligned ASS GCS URL
+          <span class="optional">(省略可)</span>
+        </label>
+        <input type="text" name="subs_url" id="subs_url" placeholder="gs://bucket/path/to/subtitles_aligned.ass">
+        <p class="hint">省略するとWhisperでタイミング自動生成</p>
+      </div>
+
+      <div class="field" id="whisper_field">
+        <label>Whisper モデル</label>
+        <select name="whisper_model">
+          <option value="large-v3" {% if whisper_model == 'large-v3' %}selected{% endif %}>large-v3（高精度・低速）</option>
+          <option value="medium" {% if whisper_model == 'medium' %}selected{% endif %}>medium</option>
+          <option value="small" {% if whisper_model == 'small' %}selected{% endif %}>small</option>
+          <option value="base" {% if whisper_model == 'base' %}selected{% endif %}>base（低精度・高速）</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label>
+          出力先 GCS パス
+          <span class="optional">(省略可)</span>
+        </label>
+        <input type="text" name="output_prefix" placeholder="{{ default_output or 'gs://bucket/output/prefix' }}"
+               value="{{ default_output }}">
+        <p class="hint">出力 MP4 は &lt;prefix&gt;/&lt;job_id&gt;/output.mp4 に保存されます</p>
+      </div>
+
+      <button type="submit">実行キューに追加</button>
+    </form>
+  </div>
+
+  <script>
+    const subsInput = document.getElementById('subs_url');
+    const whisperField = document.getElementById('whisper_field');
+    function sync() {
+      whisperField.style.display = subsInput.value.trim() ? 'none' : '';
+    }
+    subsInput.addEventListener('input', sync);
+    sync();
+  </script>
+</body>
+</html>
