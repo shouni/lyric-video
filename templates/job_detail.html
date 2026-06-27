@@ -40,7 +40,7 @@
         <div class="video-player-unit mb-4">
           <div class="d-flex justify-content-between align-items-center mb-3">
             <small class="text-secondary fw-bold"><i class="bi bi-film me-1"></i>VIDEO PREVIEW</small>
-            <a href="{{ signed_url }}" download="output.mp4" class="btn btn-sm btn-outline-light">
+            <a href="{{ download_url }}" class="btn btn-sm btn-outline-light">
               <i class="bi bi-download me-1"></i>MP4 ダウンロード
             </a>
           </div>
@@ -91,8 +91,8 @@
       <i class="bi bi-arrow-left me-1"></i>履歴一覧へ戻る
     </a>
     <div class="d-flex gap-2">
-      {% if signed_url %}
-      <a href="{{ signed_url }}" download="output.mp4" class="btn btn-outline-primary btn-sm">
+      {% if download_url %}
+      <a href="{{ download_url }}" class="btn btn-outline-primary btn-sm">
         <i class="bi bi-download me-1"></i>MP4 ダウンロード
       </a>
       {% endif %}
