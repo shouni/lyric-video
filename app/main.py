@@ -27,7 +27,7 @@ _PUBLIC_PATHS = {"/healthz", "/auth/login", "/auth/callback", "/tasks/generate"}
 def create_app() -> Flask:
     cfg = Config.from_env()
 
-    app = Flask(__name__, template_folder="../templates")
+    app = Flask(__name__, template_folder="../templates", static_folder="../static")
     app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
     app.secret_key = cfg.session_secret
     app.config.update(
