@@ -4,6 +4,7 @@ import logging
 import sys
 
 from flask import Flask, redirect, request, session, url_for
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 from app.auth import auth_bp, get_user_email, init_oauth
 from app.config import Config
@@ -27,6 +28,7 @@ def create_app() -> Flask:
     cfg = Config.from_env()
 
     app = Flask(__name__, template_folder="../templates")
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
     app.secret_key = cfg.session_secret
     app.config.update(
         SESSION_COOKIE_SECURE=cfg.is_secure_url(),

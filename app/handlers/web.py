@@ -46,7 +46,13 @@ def post_form():
     )
 
     def render_error(error: str, status: int):
-        return render_template("index.html", error=error, default_output=cfg.default_output_prefix(), whisper_model=cfg.whisper_model), status
+        return render_template(
+            "index.html",
+            error=error,
+            default_output=cfg.default_output_prefix(),
+            whisper_model=cfg.whisper_model,
+            csrf_token=session.get("csrf_token"),
+        ), status
 
     try:
         task.validate()

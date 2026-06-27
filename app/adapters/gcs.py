@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import mimetypes
 import os
 from functools import lru_cache
 
@@ -30,5 +31,5 @@ def download(uri: str, local_path: str) -> None:
 def upload(local_path: str, uri: str) -> None:
     bucket_name, blob_name = _parse(uri)
     blob = _get_client().bucket(bucket_name).blob(blob_name)
-    content_type = "video/mp4" if local_path.lower().endswith(".mp4") else None
+    content_type, _ = mimetypes.guess_type(local_path)
     blob.upload_from_filename(local_path, content_type=content_type)
