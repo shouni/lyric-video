@@ -21,7 +21,7 @@ from app.handlers.worker import router as worker_router
 logging.basicConfig(
     stream=sys.stdout,
     level=logging.INFO,
-    format='{"time": "%(asctime)s", "level": "%(levelname)s", "logger": "%(name)s", "message": "%(message)s"}',
+    format='[%(asctime)s] %(levelname)s %(name)s: %(message)s',
 )
 logger = logging.getLogger(__name__)
 
@@ -72,16 +72,16 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Lyric Video", lifespan=lifespan)
 
-# add_middleware は後から追加したものが外側（先に実行）になる。
-# SessionMiddleware を先に追加 → 外側に配置される（リクエストを最初に処理）
-# AuthMiddleware を後に追加 → 内側に配置される（Session 確立後に実行）
+# add_middleware は LIFO: 最後に追加したものが外側（先に実行）になる。
+# AuthMiddleware を先に追加 → 内側に配置される（Session 確立後に実行）
+# SessionMiddleware を後に追加 → 外側に配置される（リクエストを最初に処理）
+app.add_middleware(AuthMiddleware)
 app.add_middleware(
     SessionMiddleware,
     secret_key=_cfg.session_secret,
     https_only=_cfg.is_secure_url(),
     same_site="lax",
 )
-app.add_middleware(AuthMiddleware)
 
 app.include_router(web_router)
 app.include_router(worker_router)

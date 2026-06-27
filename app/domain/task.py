@@ -37,6 +37,8 @@ class Task:
         errors: list[str] = []
         if not _JOB_ID_PATTERN.match(self.job_id):
             errors.append(f"invalid job_id: {self.job_id!r}")
+        if self.whisper_model not in {"large-v3", "medium", "small", "base"}:
+            errors.append(f"invalid whisper_model: {self.whisper_model!r}")
         if not self.audio_url.startswith("gs://"):
             errors.append("audio_url must be a GCS URI (gs://...)")
         if not self.keyframes_url.startswith("gs://"):

@@ -61,13 +61,14 @@ async def post_form(
         return render_form(str(exc), 400)
 
     if queue is None:
-        logger.warning("No queue configured — task not enqueued job_id=%s", job_id)
-    else:
-        try:
-            queue.enqueue(asdict(task))
-        except Exception as exc:
-            logger.error("Failed to enqueue task job_id=%s: %s", job_id, exc)
-            return render_form(f"タスクのキュー追加に失敗しました: {exc}", 502)
+        logger.error("Cloud Tasks queue is not configured job_id=%s", job_id)
+        return render_form("システムエラー: Cloud Tasks キューが構成されていないため、タスクを実行できません。", 501)
+
+    try:
+        queue.enqueue(asdict(task))
+    except Exception as exc:
+        logger.error("Failed to enqueue task job_id=%s: %s", job_id, exc)
+        return render_form(f"タスクのキュー追加に失敗しました: {exc}", 502)
 
     return _templates.TemplateResponse(
         "queued.html",
