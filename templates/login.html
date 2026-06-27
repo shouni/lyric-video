@@ -1,83 +1,32 @@
-<!DOCTYPE html>
-<html lang="ja">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ログイン — Lyric Video</title>
-  <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      background: #f5f5f5;
-      min-height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-    .card {
-      background: #fff;
-      border-radius: 12px;
-      box-shadow: 0 2px 12px rgba(0,0,0,.08);
-      padding: 48px 40px;
-      width: 100%;
-      max-width: 380px;
-      text-align: center;
-    }
-    h1 { font-size: 1.4rem; margin-bottom: 8px; }
-    p { color: #777; font-size: .9rem; margin-bottom: 32px; }
-    .error {
-      background: #fff0f0;
-      border: 1px solid #f5c6cb;
-      border-radius: 6px;
-      color: #721c24;
-      padding: 10px 14px;
-      margin-bottom: 20px;
-      font-size: .85rem;
-    }
-    .btn-google {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 12px;
-      width: 100%;
-      padding: 12px 16px;
-      background: #fff;
-      border: 1px solid #ddd;
-      border-radius: 6px;
-      font-size: .95rem;
-      font-weight: 500;
-      color: #333;
-      text-decoration: none;
-      cursor: pointer;
-      transition: background .15s, box-shadow .15s;
-    }
-    .btn-google:hover {
-      background: #f8f8f8;
-      box-shadow: 0 1px 4px rgba(0,0,0,.1);
-    }
-    .btn-google svg { flex-shrink: 0; }
-  </style>
-</head>
-<body>
-  <div class="card">
-    <h1>🎵 Lyric Video</h1>
-    <p>続けるには Google アカウントでログインしてください</p>
+{% extends "layout.html" %}
 
-    {% if error == 'unauthorized' %}
-    <div class="error">このアカウントはアクセスが許可されていません。</div>
-    {% elif error == 'oauth_error' %}
-    <div class="error">ログイン中にエラーが発生しました。再度お試しください。</div>
-    {% endif %}
+{% block title %}ログイン — Lyric Video{% endblock %}
 
-    <a href="/auth/login" class="btn-google">
-      <svg width="18" height="18" viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg">
-        <path d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.874 2.684-6.615z" fill="#4285F4"/>
-        <path d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z" fill="#34A853"/>
-        <path d="M3.964 10.71A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.042l3.007-2.332z" fill="#FBBC05"/>
-        <path d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.958L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58z" fill="#EA4335"/>
-      </svg>
-      Google でログイン
-    </a>
+{% block body %}
+<div class="min-vh-100 d-flex align-items-center justify-content-center">
+  <div class="col-12 col-sm-8 col-md-5 col-lg-4">
+    <div class="card shadow-sm text-center">
+      <div class="card-body p-5">
+        <h1 class="h4 mb-2">🎵 Lyric Video</h1>
+        <p class="text-muted small mb-4">続けるには Google アカウントでログインしてください</p>
+
+        {% if error == 'unauthorized' %}
+        <div class="alert alert-danger small">このアカウントはアクセスが許可されていません。</div>
+        {% elif error == 'oauth_error' %}
+        <div class="alert alert-danger small">ログイン中にエラーが発生しました。再度お試しください。</div>
+        {% endif %}
+
+        <a href="/auth/login" class="btn btn-outline-secondary d-flex align-items-center justify-content-center gap-2">
+          <svg width="18" height="18" viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg">
+            <path d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.874 2.684-6.615z" fill="#4285F4"/>
+            <path d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z" fill="#34A853"/>
+            <path d="M3.964 10.71A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.042l3.007-2.332z" fill="#FBBC05"/>
+            <path d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.958L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58z" fill="#EA4335"/>
+          </svg>
+          Google でログイン
+        </a>
+      </div>
+    </div>
   </div>
-</body>
-</html>
+</div>
+{% endblock %}

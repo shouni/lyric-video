@@ -1,0 +1,21 @@
+:root {
+    --lv-primary: #5c7cfa;
+    --lv-primary-dark: #4263eb;
+}
+
+.btn-primary {
+    background-color: var(--lv-primary);
+    border-color: var(--lv-primary);
+}
+
+.btn-primary:hover,
+.btn-primary:focus {
+    background-color: var(--lv-primary-dark);
+    border-color: var(--lv-primary-dark);
+}
+
+.form-control:focus,
+.form-select:focus {
+    border-color: var(--lv-primary);
+    box-shadow: 0 0 0 0.25rem rgba(92, 124, 250, 0.25);
+}
