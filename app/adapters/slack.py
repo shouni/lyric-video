@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import urllib.error
 import urllib.request
 
 logger = logging.getLogger(__name__)
@@ -25,8 +26,12 @@ class SlackNotifier:
             data=payload,
             headers={"Content-Type": "application/json"},
         )
-        with urllib.request.urlopen(req, timeout=10):
-            pass
+        try:
+            with urllib.request.urlopen(req, timeout=10):
+                pass
+        except urllib.error.HTTPError as exc:
+            logger.error("Slack API error: %s %s", exc.code, exc.read().decode("utf-8"))
+            raise
 
     def notify_complete(self, job_id: str, output_uri: str) -> None:
         lines = [f"*Job ID:* `{job_id}`"]

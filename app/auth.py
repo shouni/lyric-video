@@ -60,7 +60,8 @@ def get_user_email(request: Request) -> str | None:
 
 def _is_allowed(email: str, allowed_emails: list[str], allowed_domains: list[str]) -> bool:
     if not allowed_emails and not allowed_domains:
-        return True
+        logger.error("No ALLOWED_EMAILS or ALLOWED_DOMAINS configured — denying access by default")
+        return False
     if email in allowed_emails:
         return True
     domain = email.split("@")[-1] if "@" in email else ""

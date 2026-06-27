@@ -59,7 +59,7 @@ steps:
       - '--region=${_REGION}'
       - '--platform=managed'
       - '--allow-unauthenticated'
-      - '--timeout=3600'
+      - '--timeout=1800'
       - '--memory=8Gi'
       - '--cpu=4'
       - '--concurrency=1'
