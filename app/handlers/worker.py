@@ -34,7 +34,16 @@ def process_task():
         return jsonify({"error": str(exc)}), 400
 
     meta_uri = f"{task.output_prefix.rstrip('/')}/{task.job_id}/meta.json" if task.output_prefix else None
-    _update_meta(meta_uri, {"status": "running"})
+    _update_meta(meta_uri, {
+        "status": "running",
+        "job_id": task.job_id,
+        "audio_url": task.audio_url,
+        "keyframes_url": task.keyframes_url,
+        "subs_url": task.subs_url,
+        "whisper_model": task.whisper_model,
+        "output_prefix": task.output_prefix,
+        "created_at": task.created_at,
+    })
 
     logger.info("Processing task job_id=%s", task.job_id)
     try:
