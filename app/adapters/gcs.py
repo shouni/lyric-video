@@ -32,4 +32,4 @@ def upload(local_path: str, uri: str) -> None:
     bucket_name, blob_name = _parse(uri)
     blob = _get_client().bucket(bucket_name).blob(blob_name)
     content_type, _ = mimetypes.guess_type(local_path)
-    blob.upload_from_filename(local_path, content_type=content_type)
+    blob.upload_from_filename(local_path, content_type=content_type or "application/octet-stream")

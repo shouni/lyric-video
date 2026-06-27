@@ -26,7 +26,7 @@ def process_task():
 
     try:
         task = Task.from_json(request.data)
-        task.validate()
+        task.validate(allowed_bucket=cfg.gcs_bucket)
     except Exception as exc:
         logger.error("Invalid task payload: %s", exc)
         return jsonify({"error": str(exc)}), 400

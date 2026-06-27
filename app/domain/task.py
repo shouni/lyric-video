@@ -33,19 +33,26 @@ class Task:
     def from_json(cls, data: str | bytes) -> "Task":
         return cls(**json.loads(data))
 
-    def validate(self) -> None:
+    def validate(self, allowed_bucket: str = "") -> None:
         errors: list[str] = []
         if not _JOB_ID_PATTERN.match(self.job_id):
             errors.append(f"invalid job_id: {self.job_id!r}")
         if self.whisper_model not in {"large-v3", "medium", "small", "base"}:
             errors.append(f"invalid whisper_model: {self.whisper_model!r}")
-        if not self.audio_url.startswith("gs://"):
-            errors.append("audio_url must be a GCS URI (gs://...)")
-        if not self.keyframes_url.startswith("gs://"):
-            errors.append("keyframes_url must be a GCS URI (gs://...)")
-        if self.subs_url and not self.subs_url.startswith("gs://"):
-            errors.append("subs_url must be a GCS URI (gs://...) if provided")
-        if self.output_prefix and not self.output_prefix.startswith("gs://"):
-            errors.append("output_prefix must be a GCS URI (gs://...) if provided")
+
+        def _check_uri(url: str, field: str, required: bool = True) -> None:
+            if not url:
+                if required:
+                    errors.append(f"{field} is required")
+                return
+            if not url.startswith("gs://"):
+                errors.append(f"{field} must be a GCS URI (gs://...)")
+            elif allowed_bucket and not url.startswith(f"gs://{allowed_bucket}/"):
+                errors.append(f"{field} must be within bucket: {allowed_bucket}")
+
+        _check_uri(self.audio_url, "audio_url")
+        _check_uri(self.keyframes_url, "keyframes_url")
+        _check_uri(self.subs_url, "subs_url", required=False)
+        _check_uri(self.output_prefix, "output_prefix", required=False)
         if errors:
             raise ValueError("; ".join(errors))

@@ -55,7 +55,7 @@ def post_form():
         ), status
 
     try:
-        task.validate()
+        task.validate(allowed_bucket=cfg.gcs_bucket)
     except ValueError as exc:
         return render_error(str(exc), 400)
 
