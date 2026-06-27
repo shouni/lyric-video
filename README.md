@@ -15,10 +15,10 @@
 
 ```
 ブラウザ（Google OAuth2 認証済み）
-  │  GCS URL をフォームで入力
+  │  /new フォームで GCS URL を入力
   ▼
 Cloud Run (Flask)
-  │  job_id を生成してキューに投入
+  │  job_id を生成 → meta.json を GCS へ保存 → キューに投入
   ▼
 Cloud Tasks
   │  POST /tasks/generate を非同期呼び出し
@@ -27,7 +27,7 @@ Cloud Run (同一サービス / worker エンドポイント)
   ├─ GCS から audio.mp3 / keyframes.zip をダウンロード
   ├─ Whisper でカラオケタイミング生成（ASS 未指定時）
   ├─ PIL で字幕を焼き込み MP4 生成
-  └─ GCS へアップロード → Slack 通知
+  └─ GCS へアップロード → meta.json 更新 → Slack 通知
 ```
 
 ---
@@ -102,8 +102,12 @@ gcloud builds submit --config=cloudbuild.yaml
 
 | メソッド | パス | 説明 |
 |---|---|---|
-| `GET` | `/` | 入力フォーム（要ログイン） |
-| `POST` | `/` | タスクをキューに投入（要ログイン） |
+| `GET` | `/` | ホーム（最新5件表示、要ログイン） |
+| `GET` | `/new` | 入力フォーム（要ログイン） |
+| `POST` | `/new` | タスクをキューに投入（要ログイン） |
+| `GET` | `/jobs` | ジョブ履歴一覧（要ログイン） |
+| `GET` | `/jobs/<job_id>` | ジョブ詳細・動画プレーヤー（要ログイン） |
+| `DELETE` | `/jobs/<job_id>` | ジョブ削除・GCS ファイル削除（要ログイン） |
 | `GET` | `/auth/login` | Google OAuth2 ログイン |
 | `GET` | `/auth/callback` | OAuth2 コールバック |
 | `GET` | `/auth/logout` | ログアウト |
@@ -120,7 +124,7 @@ keyframes.zip
 ├── cut_02.png
 ├── ...
 ├── inputs.txt       # 画像ファイル名と表示尺
-└── subtitles.ass    # ASS カラオケ字幕
+└── subtitles.ass    # ASS 字幕（カラオケタイミングなしでも可）
 ```
 
 **inputs.txt の形式:**
@@ -132,6 +136,27 @@ duration 40.000
 file 'cut_02.png'
 duration 50.000
 ```
+
+**subtitles.ass の形式:**
+
+歌詞行は **1行ずつ別の `Dialogue` イベント** に分割する必要があります。`\N` で複数行を1イベントにまとめると、Whisper アライメントが正しく機能しません。
+
+```ass
+[V4+ Styles]
+Style: Karaoke,Arial,64,&H0000FFFF,&H00FFFFFF,&H00000000,&H80000000,...
+;                        ↑黄（歌唱済み）  ↑白（未歌唱）
+
+[Events]
+Dialogue: 0,0:00:10.00,0:00:17.00,Karaoke,,0,0,0,,1行目の歌詞
+Dialogue: 0,0:00:17.00,0:00:22.00,Karaoke,,0,0,0,,2行目の歌詞
+```
+
+| 項目 | 説明 |
+|---|---|
+| スタイル名 | `Karaoke`（必須） |
+| PrimaryColour | 歌唱済み文字の色（ASS 形式 `&HAABBGGRR`）。黄色: `&H0000FFFF` |
+| SecondaryColour | 未歌唱文字の色。白: `&H00FFFFFF` |
+| `\k` タグ | 不要。`align_subtitles.py` が Whisper で自動生成する |
 
 ---
 
