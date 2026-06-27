@@ -2,16 +2,17 @@ from __future__ import annotations
 
 import logging
 
-from authlib.integrations.starlette_client import OAuth, OAuthError
-from fastapi import Request
-from fastapi.responses import RedirectResponse
+from authlib.integrations.flask_client import OAuth
+from flask import Blueprint, current_app, redirect, render_template, request, session, url_for
 
 logger = logging.getLogger(__name__)
 
 _oauth = OAuth()
+auth_bp = Blueprint("auth", __name__, url_prefix="/auth")
 
 
-def setup_oauth(client_id: str, client_secret: str) -> None:
+def init_oauth(app, client_id: str, client_secret: str) -> None:
+    _oauth.init_app(app)
     _oauth.register(
         name="google",
         client_id=client_id,
@@ -21,41 +22,44 @@ def setup_oauth(client_id: str, client_secret: str) -> None:
     )
 
 
-async def login(request: Request) -> RedirectResponse:
-    redirect_uri = str(request.url_for("auth_callback"))
-    return await _oauth.google.authorize_redirect(request, redirect_uri)
+@auth_bp.route("/login")
+def login():
+    error = request.args.get("error")
+    if error:
+        return render_template("login.html", error=error)
+    redirect_uri = url_for("auth.callback", _external=True)
+    return _oauth.google.authorize_redirect(redirect_uri)
 
 
-async def callback(
-    request: Request,
-    allowed_emails: list[str],
-    allowed_domains: list[str],
-) -> RedirectResponse:
+@auth_bp.route("/callback")
+def callback():
     try:
-        token = await _oauth.google.authorize_access_token(request)
-    except OAuthError as exc:
+        token = _oauth.google.authorize_access_token()
+    except Exception as exc:
         logger.error("OAuth error: %s", exc)
-        return RedirectResponse("/auth/login?error=oauth_error")
+        return redirect(url_for("auth.login", error="oauth_error"), 303)
 
     user = token.get("userinfo", {})
     email = user.get("email", "").lower()
+    cfg = current_app.config_obj
 
-    if not _is_allowed(email, allowed_emails, allowed_domains):
+    if not _is_allowed(email, cfg.allowed_emails, cfg.allowed_domains):
         logger.warning("Unauthorized login attempt email=%s", email)
-        return RedirectResponse("/auth/login?error=unauthorized")
+        return redirect(url_for("auth.login", error="unauthorized"), 303)
 
-    request.session["user_email"] = email
+    session["user_email"] = email
     logger.info("User logged in email=%s", email)
-    return RedirectResponse("/")
+    return redirect("/", 303)
 
 
-def logout(request: Request) -> RedirectResponse:
-    request.session.clear()
-    return RedirectResponse("/auth/login")
+@auth_bp.route("/logout")
+def logout():
+    session.clear()
+    return redirect(url_for("auth.login"), 303)
 
 
-def get_user_email(request: Request) -> str | None:
-    return request.session.get("user_email")
+def get_user_email() -> str | None:
+    return session.get("user_email")
 
 
 def _is_allowed(email: str, allowed_emails: list[str], allowed_domains: list[str]) -> bool:

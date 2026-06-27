@@ -2,48 +2,45 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import JSONResponse
+from flask import Blueprint, current_app, jsonify, request
 from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token
-from starlette.concurrency import run_in_threadpool
 
 from app.domain.task import Task
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
+worker_bp = Blueprint("worker", __name__)
 
 _GOOGLE_AUTH_REQUEST = google_requests.Request()
 
 
-@router.post("/tasks/generate")
-async def process_task(request: Request):
-    cfg = request.app.state.config
-    notifier = request.app.state.notifier
-    pipeline = request.app.state.pipeline
+@worker_bp.route("/tasks/generate", methods=["POST"])
+def process_task():
+    cfg = current_app.config_obj
+    notifier = current_app.notifier
+    pipeline = current_app.pipeline
 
     auth_header = request.headers.get("Authorization", "")
     if not _verify_oidc_token(auth_header, cfg.task_audience_url):
-        raise HTTPException(status_code=401, detail="Unauthorized")
+        return jsonify({"error": "Unauthorized"}), 401
 
-    body = await request.body()
     try:
-        task = Task.from_json(body)
+        task = Task.from_json(request.data)
         task.validate()
     except Exception as exc:
         logger.error("Invalid task payload: %s", exc)
-        return JSONResponse({"error": str(exc)}, status_code=400)
+        return jsonify({"error": str(exc)}), 400
 
     logger.info("Processing task job_id=%s", task.job_id)
     try:
-        output_uri = await run_in_threadpool(pipeline.run, task)
+        output_uri = pipeline.run(task)
         notifier.notify_complete(task.job_id, output_uri)
         logger.info("Task completed job_id=%s output=%s", task.job_id, output_uri)
-        return JSONResponse({"job_id": task.job_id, "status": "complete", "output": output_uri})
+        return jsonify({"job_id": task.job_id, "status": "complete", "output": output_uri})
     except Exception as exc:
         logger.error("Task failed job_id=%s: %s", task.job_id, exc, exc_info=True)
         notifier.notify_error(task.job_id, exc)
-        raise HTTPException(status_code=500, detail=str(exc))
+        return jsonify({"error": str(exc)}), 500
 
 
 def _verify_oidc_token(authorization: str, audience: str) -> bool:

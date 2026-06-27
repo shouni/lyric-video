@@ -25,4 +25,4 @@ COPY . .
 ENV PORT=8080
 EXPOSE 8080
 
-CMD ["python3", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]
+CMD ["gunicorn", "--bind", "0.0.0.0:8080", "--workers", "1", "--timeout", "1800", "app.main:app"]

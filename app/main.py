@@ -2,111 +2,75 @@ from __future__ import annotations
 
 import logging
 import sys
-from contextlib import asynccontextmanager
 
-import uvicorn
-from fastapi import FastAPI, Request
-from fastapi.responses import RedirectResponse
-from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.middleware.sessions import SessionMiddleware
+from flask import Flask, redirect, request, session, url_for
 
-from app import auth
+from app.auth import auth_bp, get_user_email, init_oauth
 from app.config import Config
 from app.adapters.slack import SlackNotifier
 from app.adapters.task_queue import CloudTasksQueue
 from app.pipeline.runner import PipelineRunner
-from app.handlers.web import router as web_router
-from app.handlers.worker import router as worker_router
+from app.handlers.web import web_bp
+from app.handlers.worker import worker_bp
 
 logging.basicConfig(
     stream=sys.stdout,
     level=logging.INFO,
-    format='[%(asctime)s] %(levelname)s %(name)s: %(message)s',
+    format="[%(asctime)s] %(levelname)s %(name)s: %(message)s",
 )
 logger = logging.getLogger(__name__)
 
 _PUBLIC_PATHS = {"/healthz", "/auth/login", "/auth/callback", "/tasks/generate"}
 
-# モジュールロード時に設定を読み込む（ミドルウェア初期化に必要）
-_cfg = Config.from_env()
 
+def create_app() -> Flask:
+    cfg = Config.from_env()
 
-class AuthMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next):
-        if request.url.path in _PUBLIC_PATHS:
-            return await call_next(request)
-        if not auth.get_user_email(request):
-            return RedirectResponse("/auth/login")
-        return await call_next(request)
+    app = Flask(__name__, template_folder="../templates")
+    app.secret_key = cfg.session_secret
 
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    app.state.config = _cfg
-
-    auth.setup_oauth(_cfg.google_client_id, _cfg.google_client_secret)
+    init_oauth(app, cfg.google_client_id, cfg.google_client_secret)
 
     queue = None
-    if _cfg.project_id and _cfg.queue_id and _cfg.service_account_email:
+    if cfg.project_id and cfg.queue_id and cfg.service_account_email:
         try:
             queue = CloudTasksQueue(
-                project_id=_cfg.project_id,
-                location_id=_cfg.location_id,
-                queue_id=_cfg.queue_id,
-                worker_url=_cfg.worker_url,
-                service_account_email=_cfg.service_account_email,
-                audience=_cfg.task_audience_url,
+                project_id=cfg.project_id,
+                location_id=cfg.location_id,
+                queue_id=cfg.queue_id,
+                worker_url=cfg.worker_url,
+                service_account_email=cfg.service_account_email,
+                audience=cfg.task_audience_url,
             )
-            logger.info("Cloud Tasks queue initialized queue=%s", _cfg.queue_id)
+            logger.info("Cloud Tasks queue initialized queue=%s", cfg.queue_id)
         except Exception as exc:
             logger.error("Failed to initialize Cloud Tasks queue: %s", exc)
 
-    app.state.queue = queue
-    app.state.notifier = SlackNotifier(_cfg.slack_webhook_url, _cfg.service_url)
-    app.state.pipeline = PipelineRunner()
+    app.config_obj = cfg
+    app.queue = queue
+    app.notifier = SlackNotifier(cfg.slack_webhook_url, cfg.service_url)
+    app.pipeline = PipelineRunner()
 
-    logger.info("Application started port=%s", _cfg.port)
-    yield
-    logger.info("Application shutting down")
+    app.register_blueprint(auth_bp)
+    app.register_blueprint(web_bp)
+    app.register_blueprint(worker_bp)
 
+    @app.before_request
+    def check_auth():
+        if request.path in _PUBLIC_PATHS:
+            return None
+        if not get_user_email():
+            return redirect(url_for("auth.login"), 303)
 
-app = FastAPI(title="Lyric Video", lifespan=lifespan)
+    @app.get("/healthz")
+    def healthz():
+        return {"status": "ok"}
 
-# add_middleware は LIFO: 最後に追加したものが外側（先に実行）になる。
-# AuthMiddleware を先に追加 → 内側に配置される（Session 確立後に実行）
-# SessionMiddleware を後に追加 → 外側に配置される（リクエストを最初に処理）
-app.add_middleware(AuthMiddleware)
-app.add_middleware(
-    SessionMiddleware,
-    secret_key=_cfg.session_secret,
-    https_only=_cfg.is_secure_url(),
-    same_site="lax",
-)
-
-app.include_router(web_router)
-app.include_router(worker_router)
+    logger.info("Application created port=%s", cfg.port)
+    return app
 
 
-@app.get("/healthz", include_in_schema=False)
-def healthz():
-    return {"status": "ok"}
-
-
-@app.get("/auth/login", include_in_schema=False)
-async def auth_login(request: Request):
-    return await auth.login(request)
-
-
-@app.get("/auth/callback", name="auth_callback", include_in_schema=False)
-async def auth_callback(request: Request):
-    cfg = request.app.state.config
-    return await auth.callback(request, cfg.allowed_emails, cfg.allowed_domains)
-
-
-@app.get("/auth/logout", include_in_schema=False)
-def auth_logout(request: Request):
-    return auth.logout(request)
-
+app = create_app()
 
 if __name__ == "__main__":
-    uvicorn.run("app.main:app", host="0.0.0.0", port=int(_cfg.port))
+    app.run(host="0.0.0.0", port=int(app.config_obj.port))
