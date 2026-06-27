@@ -54,7 +54,7 @@ steps:
       - '--execution-environment=gen2'
       - '--allow-unauthenticated'
       - '--timeout=1800'
-      - '--memory=8Gi'
+      - '--memory=16Gi'
       - '--cpu=4'
       - '--concurrency=1'
       - '--update-env-vars'
