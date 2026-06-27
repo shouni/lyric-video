@@ -119,6 +119,8 @@ def job_detail(job_id: str):
 
     try:
         job = gcs.load_json(meta_uri)
+        if not job.get("job_id"):
+            job["job_id"] = job_id
     except Exception as exc:
         logger.error("Failed to load job %s: %s", job_id, exc)
         abort(404)
