@@ -19,14 +19,16 @@
           <div class="mb-3">
             <label class="form-label fw-semibold">Audio GCS URL</label>
             <input type="text" class="form-control" name="audio_url"
-                   placeholder="gs://bucket/path/to/audio.mp3" required>
+                   placeholder="gs://bucket/path/to/audio.mp3" required
+                   value="{{ audio_url or '' }}">
             <div class="form-text">MP3 ファイルの GCS パス</div>
           </div>
 
           <div class="mb-3">
             <label class="form-label fw-semibold">Keyframes ZIP GCS URL</label>
             <input type="text" class="form-control" name="keyframes_url"
-                   placeholder="gs://bucket/path/to/keyframes.zip" required>
+                   placeholder="gs://bucket/path/to/keyframes.zip" required
+                   value="{{ keyframes_url or '' }}">
             <div class="form-text">PNG・inputs.txt・subtitles.ass を含む ZIP</div>
           </div>
 
@@ -36,7 +38,8 @@
               <span class="text-muted fw-normal">(省略可)</span>
             </label>
             <input type="text" class="form-control" name="subs_url" id="subs_url"
-                   placeholder="gs://bucket/path/to/subtitles_aligned.ass">
+                   placeholder="gs://bucket/path/to/subtitles_aligned.ass"
+                   value="{{ subs_url or '' }}">
             <div class="form-text">省略するとWhisperでタイミング自動生成</div>
           </div>
 
