@@ -28,6 +28,9 @@ class Config:
     def is_secure_url(self) -> bool:
         return self.service_url.startswith("https://")
 
+    def default_output_prefix(self) -> str:
+        return f"gs://{self.gcs_bucket}/{self.gcs_output_prefix}" if self.gcs_bucket else ""
+
     @classmethod
     def from_env(cls) -> "Config":
         service_url = os.getenv("SERVICE_URL", "http://localhost:8080").rstrip("/")

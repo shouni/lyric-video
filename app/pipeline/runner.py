@@ -66,13 +66,13 @@ def _stream(pipe, log_fn):
 
 
 def _run_subprocess(cmd: list[str], name: str) -> None:
-    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    t_out = threading.Thread(target=_stream, args=(proc.stdout, logger.info))
-    t_err = threading.Thread(target=_stream, args=(proc.stderr, logger.warning))
-    t_out.start()
-    t_err.start()
-    proc.wait()
-    t_out.join()
-    t_err.join()
-    if proc.returncode != 0:
-        raise RuntimeError(f"{name} failed with exit code {proc.returncode}")
+    with subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True) as proc:
+        t_out = threading.Thread(target=_stream, args=(proc.stdout, logger.info))
+        t_err = threading.Thread(target=_stream, args=(proc.stderr, logger.warning))
+        t_out.start()
+        t_err.start()
+        proc.wait()
+        t_out.join()
+        t_err.join()
+        if proc.returncode != 0:
+            raise RuntimeError(f"{name} failed with exit code {proc.returncode}")
