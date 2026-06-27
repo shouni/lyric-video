@@ -1,4 +1,16 @@
+# Processing
 stable-ts
 pysubs2
 pillow
 silero-vad
+
+# Web app
+flask>=3.0.0
+gunicorn>=21.2.0
+authlib>=1.3.0
+requests>=2.31.0
+
+# GCP
+google-cloud-tasks>=2.16.0
+google-cloud-storage>=2.16.0
+google-auth>=2.27.0

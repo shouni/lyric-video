@@ -31,12 +31,19 @@ class RenderConfig:
 
 
 FONT_CANDIDATES = [
+    # macOS
     "/System/Library/Fonts/ヒラギノ角ゴシック W7.ttc",
     os.path.expanduser("~/Library/Fonts/SourceHanSans-VF.otf.ttc"),
     "/System/Library/Fonts/Hiragino Sans GB.ttc",
     "/System/Library/Fonts/AppleSDGothicNeo.ttc",
     "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
     "/Library/Fonts/Arial Unicode.ttf",
+    # Linux (Docker: fonts-noto-cjk)
+    "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+    "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
+    "/usr/share/fonts/opentype/noto/NotoSansCJKjp-Regular.otf",
+    # Linux (custom install)
+    "/usr/local/share/fonts/SourceHanSans-VF.otf.ttc",
 ]
 
 

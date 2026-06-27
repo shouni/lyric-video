@@ -1,127 +1,116 @@
-# ✨ Lyric Video Maker
+# ✨ Lyric Video
 
 [![Language](https://img.shields.io/badge/Language-Python-blue)](https://www.python.org/)
-[![Python Version](https://img.shields.io/badge/Python-3.9%2B-blue)](https://www.python.org/)
+[![Python Version](https://img.shields.io/badge/Python-3.11%2B-blue)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Status](https://img.shields.io/badge/Status-Active-brightgreen)](#)
 
 ## 🎯 概要
 
-**Lyric Video Maker** は、MP3 音声ファイルとキーフレーム ZIP ファイルから、**カラオケ字幕付き MP4 動画**を生成する Python スクリプト群です。
-
-ワークフローは 2 段階に分かれています。
-
-```
-① align_subtitles.py
-   audio.mp3 + keyframes.zip  →  カラオケタイミング付き ASS（\k タグ）
-
-② burn_subs.py
-   audio.mp3 + keyframes.zip (+ ASS)  →  output.mp4（カラオケ字幕付き）
-```
-
-既にタイミング済みの ASS がある場合は ② だけ実行すれば OK です。
+**Lyric Video** は、MP3 からカラオケ字幕付き MP4 動画を生成する **オーケストレーター** です。GCS 上の音声・キーフレーム素材を受け取り、Whisper アライメント・字幕焼き込み・エンコードを Cloud Run 上で非同期実行します。
 
 ---
 
-## 💎 特徴と設計思想
+## 🏗 アーキテクチャ
 
-### 🎤 Whisper による文字レベル自動アライメント（align_subtitles.py）
-
-- [stable-ts](https://github.com/jianfch/stable-ts) を使って Whisper の推論結果を文字レベルに分解します。
-- ZIP 内の ASS から歌詞テキストだけを抽出して Whisper にアライメントさせ、句読点・記号は直前の文字の `\k` に吸収させます。
-- 出力は pysubs2 互換の ASS ファイルで、スタイル情報は元ファイルから引き継ぎます。
-- **歌い出し対応**: 1行目のみ、元 ASS の開始時刻が Whisper の判定より **0〜3秒だけ早い**場合に限り、元 ASS の開始時刻を採用します。3秒を超える差がある場合や Whisper の方が早い場合は Whisper の判定を使用します。元 ASS の1行目 Start を歌い出しに合わせておくと正確に表示されます。
-- **繰り返し歌唱対応**: AI 音源が同じ歌詞を繰り返す場合、各行の終了時刻を次行開始直前まで延長し、繰り返し中も現在の歌詞を表示し続けます。
-
-### 🎤 ASS カラオケ字幕の完全再現（burn_subs.py）
-
-- `\k` タグを解析し、文字単位でハイライト色（黄）と待機色（白）を切り替えます。
-- 文字ごとの遷移タイミングをすべて算出し、状態が変わるフレームのみを描画します。
-- **フォント**: macOS 標準の**ヒラギノ角ゴシック W7**を最優先で使用します。見つからない場合は**源ノ角ゴシック**（Source Han Sans VF）にフォールバックします（SIL Open Font License、YouTube 商用利用可）。Source Han Sans VF のインストールは `brew install --cask font-source-han-sans-vf`。
-
-### ⚡ 差分描画による高速処理
-
-- フレームを 1 枚ずつ生成するのではなく、**字幕状態が変化するタイミングだけ**描画します。
-- 3 分の動画でも約 200 枚の差分フレームで済むため、数十秒で完了します。
-
-### 📐 自動スケーリング
-
-- ZIP 内の `subtitles.ass` の `PlayResY` と実際の画像解像度から、フォントサイズ・マージン・アウトラインを自動計算します。
-- 解像度を変えても設定変更不要です。
-
-### 🗂️ ZIP 完結型の入力設計
-
-- キーフレーム画像・タイムライン・字幕がすべて ZIP に同梱されており、配布・管理が容易です。
+```
+ブラウザ（Google OAuth2 認証済み）
+  │  GCS URL をフォームで入力
+  ▼
+Cloud Run (Flask)
+  │  job_id を生成してキューに投入
+  ▼
+Cloud Tasks
+  │  POST /tasks/generate を非同期呼び出し
+  ▼
+Cloud Run (同一サービス / worker エンドポイント)
+  ├─ GCS から audio.mp3 / keyframes.zip をダウンロード
+  ├─ Whisper でカラオケタイミング生成（ASS 未指定時）
+  ├─ PIL で字幕を焼き込み MP4 生成
+  └─ GCS へアップロード → Slack 通知
+```
 
 ---
 
-## 🚀 クイックスタート
+## ☁️ セットアップ
 
-### 依存パッケージのインストール
+### 必要な環境変数
+
+| 変数 | 必須 | 説明 |
+|---|---|---|
+| `GCP_PROJECT_ID` | ✅ | GCP プロジェクト ID |
+| `GCS_BUCKET` | ✅ | 入出力に使う GCS バケット名 |
+| `CLOUD_TASKS_QUEUE_ID` | ✅ | Cloud Tasks キュー ID |
+| `SERVICE_ACCOUNT_EMAIL` | ✅ | OIDC 認証用サービスアカウント |
+| `SERVICE_URL` | ✅ | Cloud Run サービスの URL |
+| `GOOGLE_CLIENT_ID` | ✅ | Google OAuth2 クライアント ID |
+| `GOOGLE_CLIENT_SECRET` | ✅ | Google OAuth2 クライアントシークレット |
+| `SESSION_SECRET` | ✅ | セッション署名用シークレット（ランダム文字列） |
+| `SLACK_WEBHOOK_URL` | ➖ | Slack Incoming Webhook URL |
+| `GCP_LOCATION_ID` | ➖ | リージョン（省略時: `asia-northeast1`） |
+| `GCS_OUTPUT_PREFIX` | ➖ | 出力先パスプレフィックス（省略時: `lyric-video/output`） |
+| `WHISPER_MODEL` | ➖ | Whisper モデルサイズ（省略時: `large-v3`） |
+| `ALLOWED_EMAILS` | ➖ | アクセス許可メールアドレス（カンマ区切り） |
+| `ALLOWED_DOMAINS` | ➖ | アクセス許可ドメイン（カンマ区切り、例: `example.com`） |
+
+### ローカル起動
 
 ```sh
 pip install -r requirements.txt
+
+export SESSION_SECRET=any-random-string
+export GOOGLE_CLIENT_ID=...
+export GOOGLE_CLIENT_SECRET=...
+
+flask --app app.main run --port 8080
+# → http://localhost:8080
 ```
 
-> ffmpeg が別途必要です（エンコードに使用）。
-> ```sh
-> brew install ffmpeg   # macOS
-> ```
-
----
-
-### 実行（コピペ用）
-
-**精度重視（Whisper アライメントあり）:**
+### Cloud Run へのデプロイ
 
 ```sh
-# ① タイミング生成
-python3 align_subtitles.py input/audio.mp3 input/keyframes.zip input/subtitles_aligned.ass
+# 1. Cloud Tasks キュー作成
+gcloud tasks queues create lyric-video-queue --location=asia-northeast1
 
-# ② 動画生成
-python3 burn_subs.py input/audio.mp3 input/keyframes.zip output/output.mp4 --subs input/subtitles_aligned.ass
+# 2. Cloud Build でビルド＆デプロイ
+gcloud builds submit --config=cloudbuild.yaml \
+  --substitutions=\
+_GCS_BUCKET=your-bucket,\
+_SERVICE_ACCOUNT_EMAIL=sa@project.iam.gserviceaccount.com,\
+_GOOGLE_CLIENT_ID=your-client-id,\
+_GOOGLE_CLIENT_SECRET=your-client-secret,\
+_SESSION_SECRET=your-random-secret,\
+_SLACK_WEBHOOK_URL=https://hooks.slack.com/services/...
 ```
 
-**簡易版（ZIP 内の ASS タイミングをそのまま使う）:**
-
-```sh
-python3 burn_subs.py input/audio.mp3 input/keyframes.zip output/output.mp4
-```
+> **サービスアカウントの必要権限:**
+> - `roles/storage.objectAdmin`（GCS 読み書き）
+> - `roles/cloudtasks.enqueuer`（タスク投入）
 
 ---
 
-## ⚙️ 引数
+## 🔌 エンドポイント
 
-### align_subtitles.py
-
-| 引数 | 必須 | 説明 |
-| --- | --- | --- |
-| `audio.mp3` | ✅ | アライメント対象の音声ファイル |
-| `keyframes.zip` または `subtitles.ass` | ✅ | ZIP を渡すと内部の `subtitles.ass` を自動抽出。ASS ファイルを直接渡すことも可 |
-| `output.ass` | ➖ | 出力 ASS ファイル名（省略時: `subtitles_aligned.ass`）|
-| `--model` | ➖ | Whisper モデルサイズ（`base` / `small` / `medium` / `large-v3`、省略時: `large-v3`）|
-
-**注意:** 入力 ASS の歌詞行数と Whisper が検出した文字数が一致しない場合はエラーで停止します。その場合は歌詞テキストの表記（スペース・句読点）を Whisper の出力に合わせて調整してください。
-
-### burn_subs.py
-
-| 引数 | 必須 | 説明 |
-| --- | --- | --- |
-| `audio.mp3` | ✅ | BGM として使用する音声ファイル |
-| `keyframes.zip` | ✅ | PNG 画像・`inputs.txt`・`subtitles.ass` を含む ZIP |
-| `output.mp4` | ➖ | 出力ファイル名（省略時: `output.mp4`）|
-| `--subs <subtitles.ass>` | ➖ | ZIP 内の字幕を上書きする ASS ファイル |
+| メソッド | パス | 説明 |
+|---|---|---|
+| `GET` | `/` | 入力フォーム（要ログイン） |
+| `POST` | `/` | タスクをキューに投入（要ログイン） |
+| `GET` | `/auth/login` | Google OAuth2 ログイン |
+| `GET` | `/auth/callback` | OAuth2 コールバック |
+| `GET` | `/auth/logout` | ログアウト |
+| `POST` | `/tasks/generate` | Cloud Tasks worker（OIDC 認証） |
+| `GET` | `/healthz` | ヘルスチェック |
 
 ---
 
-## 📦 ZIP ファイルの構成
+## 📦 入力 ZIP の構成
 
 ```
 keyframes.zip
-├── cut_01.png       # キーフレーム画像
+├── cut_01.png
 ├── cut_02.png
 ├── ...
-├── inputs.txt       # 画像ファイル名と表示尺の定義
+├── inputs.txt       # 画像ファイル名と表示尺
 └── subtitles.ass    # ASS カラオケ字幕
 ```
 
@@ -137,25 +126,22 @@ duration 50.000
 
 ---
 
-## 🎨 字幕レンダリングの仕組み
-
-1. `subtitles.ass` から `\k` タグを解析してカラオケ遷移タイミングをリストアップ
-2. タイミングの変わり目ごとに PIL で画像にテキストを描画（アウトライン付き）
-3. 描画済みフレームを ffmpeg の concat demuxer でつなぎ合わせ、音声と合成してエンコード
-
----
-
-## 🤝 依存関係 (Dependencies)
+## 🤝 依存関係
 
 | パッケージ | 用途 |
-| --- | --- |
+|---|---|
 | [stable-ts](https://github.com/jianfch/stable-ts) | Whisper による文字レベル音声アライメント |
 | [Pillow](https://pillow.readthedocs.io/) | PNG 画像への字幕描画 |
-| [pysubs2](https://pysubs2.readthedocs.io/) | ASS 字幕ファイルのパース・スタイル取得 |
-| [ffmpeg](https://ffmpeg.org/) | 動画エンコード・音声合成（システムインストール） |
+| [pysubs2](https://pysubs2.readthedocs.io/) | ASS 字幕ファイルのパース |
+| [ffmpeg](https://ffmpeg.org/) | 動画エンコード・音声合成 |
+| [Flask](https://flask.palletsprojects.com/) | Web サーバー |
+| [gunicorn](https://gunicorn.org/) | 本番 WSGI サーバー |
+| [Authlib](https://docs.authlib.org/) | Google OAuth2 認証 |
+| [google-cloud-tasks](https://cloud.google.com/tasks) | 非同期タスクキュー |
+| [google-cloud-storage](https://cloud.google.com/storage) | GCS ファイル入出力 |
 
 ---
 
-## 📜 ライセンス (License)
+## 📜 ライセンス
 
 このプロジェクトは [MIT License](https://opensource.org/licenses/MIT) の下で公開されています。
