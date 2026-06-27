@@ -41,6 +41,8 @@ steps:
       - '${_IMAGE_BASE}/${PROJECT_ID}/${_REPO_PATH}:${_CACHE_TAG}'
       - '--build-arg'
       - 'BUILDKIT_INLINE_CACHE=1'
+      - '--build-arg'
+      - 'WHISPER_MODEL=${_WHISPER_MODEL}'
       - '.'
 
   - name: 'gcr.io/cloud-builders/docker'

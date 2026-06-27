@@ -14,13 +14,14 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application code
-COPY . .
-
-# Pre-download Whisper model into /app/.cache (XDG_CACHE_HOME) so it survives user switch
+# Pre-download Whisper model into /app/.cache (XDG_CACHE_HOME) so it survives user switch.
+# Avoid load_model here because large-v3 can exhaust Cloud Build memory while loading weights.
 ARG WHISPER_MODEL=large-v3
 ENV XDG_CACHE_HOME=/app/.cache
-RUN python3 -c "import whisper; whisper.load_model('${WHISPER_MODEL}')"
+RUN python3 -c "import os, whisper; whisper._download(whisper._MODELS['${WHISPER_MODEL}'], os.path.join(os.environ['XDG_CACHE_HOME'], 'whisper'), False)"
+
+# Copy application code after model download so code-only changes do not invalidate the model cache layer.
+COPY . .
 
 # Non-root user (PoLP); chown after model download so cache is accessible
 RUN useradd -r -u 1001 appuser && chown -R appuser /app
