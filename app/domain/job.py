@@ -1,7 +1,11 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from app.domain.task import Task
 
 
 @dataclass
@@ -26,16 +30,14 @@ class JobRecord:
         return cls(**{k: v for k, v in d.items() if k in known})
 
     @classmethod
-    def from_task(cls, task) -> "JobRecord":
-        from dataclasses import asdict as _asdict
-        d = _asdict(task)
+    def from_task(cls, task: "Task") -> "JobRecord":
         return cls(
-            job_id=d["job_id"],
+            job_id=task.job_id,
             status="queued",
-            created_at=d.get("created_at") or datetime.now(timezone.utc).isoformat(),
-            audio_url=d["audio_url"],
-            keyframes_url=d["keyframes_url"],
-            subs_url=d.get("subs_url", ""),
-            whisper_model=d.get("whisper_model", "large-v3"),
-            output_prefix=d.get("output_prefix", ""),
+            created_at=task.created_at or datetime.now(timezone.utc).isoformat(),
+            audio_url=task.audio_url,
+            keyframes_url=task.keyframes_url,
+            subs_url=task.subs_url,
+            whisper_model=task.whisper_model,
+            output_prefix=task.output_prefix,
         )

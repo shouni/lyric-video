@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import secrets
+import threading
 from dataclasses import asdict
 
 from flask import Blueprint, abort, current_app, render_template, request, session
@@ -86,7 +87,7 @@ def post_form():
         logger.error("Failed to enqueue task job_id=%s: %s", job_id, exc)
         return render_error(f"タスクのキュー追加に失敗しました: {exc}", 502)
 
-    _save_job_meta(JobRecord.from_task(task))
+    threading.Thread(target=_save_job_meta, args=(JobRecord.from_task(task),), daemon=True).start()
 
     return render_template("queued.html", job_id=job_id), 202
 

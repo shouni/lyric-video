@@ -41,16 +41,23 @@ def load_json(uri: str) -> dict:
 
 
 def list_job_metadata(output_prefix: str) -> list[dict]:
-    """output_prefix配下のmeta.jsonを全件取得し、作成日時の降順で返す。"""
+    """output_prefix配下のmeta.jsonを並列取得し、作成日時の降順で返す。"""
+    from concurrent.futures import ThreadPoolExecutor
+
     bucket_name, prefix = _parse(output_prefix.rstrip("/") + "/")
-    blobs = _get_client().bucket(bucket_name).list_blobs(prefix=prefix)
-    results = []
-    for blob in blobs:
-        if blob.name.endswith("/meta.json"):
-            try:
-                results.append(json.loads(blob.download_as_text()))
-            except Exception:
-                pass
+    bucket = _get_client().bucket(bucket_name)
+    target_blobs = [b for b in bucket.list_blobs(prefix=prefix) if b.name.endswith("/meta.json")]
+
+    def _download(blob):
+        try:
+            return json.loads(blob.download_as_text())
+        except Exception:
+            return None
+
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        raw = executor.map(_download, target_blobs)
+
+    results = [r for r in raw if r is not None]
     return sorted(results, key=lambda x: x.get("created_at", ""), reverse=True)
 
 
