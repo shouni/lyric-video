@@ -65,6 +65,13 @@ def list_job_metadata(output_prefix: str) -> list[dict]:
     return sorted(results, key=lambda x: x.get("created_at", ""), reverse=True)
 
 
+def delete(uri: str) -> None:
+    """GCS上のオブジェクトを削除する。存在しない場合は何もしない。"""
+    bucket_name, blob_name = _parse(uri)
+    blob = _get_client().bucket(bucket_name).blob(blob_name)
+    blob.delete(if_generation_match=None)
+
+
 def generate_signed_url(uri: str, service_account_email: str, expiration_hours: int = 1) -> str:
     """GCSオブジェクトへの時限アクセスURLを生成する。"""
     credentials, _ = google.auth.default(scopes=["https://www.googleapis.com/auth/cloud-platform"])

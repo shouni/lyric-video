@@ -110,9 +110,42 @@ def job_list():
     return render_template("jobs.html", jobs=jobs, error=error)
 
 
+@web_bp.route("/jobs/<job_id>", methods=["DELETE"])
+def delete_job(job_id: str):
+    """ジョブのmeta.jsonと出力ファイルをGCSから削除する。"""
+    token = session.get("csrf_token")
+    header_token = request.headers.get("X-CSRF-Token", "")
+    if not token or token != header_token:
+        abort(403)
+
+    cfg = current_app.config_obj
+    output_prefix = cfg.default_output_prefix()
+    meta_uri = f"{output_prefix.rstrip('/')}/{job_id}/meta.json"
+
+    try:
+        job = gcs.load_json(meta_uri)
+    except Exception:
+        job = {}
+
+    deleted = []
+    for uri in [meta_uri, job.get("output_uri")]:
+        if not uri:
+            continue
+        try:
+            gcs.delete(uri)
+            deleted.append(uri)
+        except Exception as exc:
+            logger.warning("Failed to delete %s: %s", uri, exc)
+
+    return {"job_id": job_id, "deleted": deleted}, 200
+
+
 @web_bp.route("/jobs/<job_id>")
 def job_detail(job_id: str):
     """ジョブ詳細・動画プレーヤーを表示する。"""
+    if "csrf_token" not in session:
+        session["csrf_token"] = secrets.token_hex(16)
+
     cfg = current_app.config_obj
     output_prefix = cfg.default_output_prefix()
     meta_uri = f"{output_prefix.rstrip('/')}/{job_id}/meta.json"
@@ -132,7 +165,8 @@ def job_detail(job_id: str):
         except Exception as exc:
             logger.error("Failed to generate signed URL job_id=%s: %s", job_id, exc)
 
-    return render_template("job_detail.html", job=job, signed_url=signed_url)
+    return render_template("job_detail.html", job=job, signed_url=signed_url,
+                           csrf_token=session["csrf_token"])
 
 
 def _save_job_meta(record: JobRecord) -> None:
