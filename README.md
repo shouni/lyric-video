@@ -50,8 +50,8 @@ Cloud Run (同一サービス / worker エンドポイント)
 | `GCP_LOCATION_ID` | ➖ | リージョン（省略時: `asia-northeast1`） |
 | `GCS_OUTPUT_PREFIX` | ➖ | 出力先パスプレフィックス（省略時: `lyric-video/output`） |
 | `WHISPER_MODEL` | ➖ | Whisper モデルサイズ（省略時: `large-v3`） |
-| `ALLOWED_EMAILS` | ➖ | アクセス許可メールアドレス（カンマ区切り） |
-| `ALLOWED_DOMAINS` | ➖ | アクセス許可ドメイン（カンマ区切り、例: `example.com`） |
+| `ALLOWED_EMAILS` | ➖ | アクセス許可メールアドレス（カンマ区切り）`ALLOWED_DOMAINS` との**どちらか必須** |
+| `ALLOWED_DOMAINS` | ➖ | アクセス許可ドメイン（カンマ区切り、例: `example.com`）`ALLOWED_EMAILS` との**どちらか必須** |
 
 ### ローカル起動
 
@@ -72,16 +72,25 @@ flask --app app.main run --port 8080
 # 1. Cloud Tasks キュー作成
 gcloud tasks queues create lyric-video-queue --location=asia-northeast1
 
-# 2. Cloud Build でビルド＆デプロイ
-gcloud builds submit --config=cloudbuild.yaml \
-  --substitutions=\
-_GCS_BUCKET=your-bucket,\
-_SERVICE_ACCOUNT_EMAIL=sa@project.iam.gserviceaccount.com,\
-_GOOGLE_CLIENT_ID=your-client-id,\
-_GOOGLE_CLIENT_SECRET=your-client-secret,\
-_SESSION_SECRET=your-random-secret,\
-_SLACK_WEBHOOK_URL=https://hooks.slack.com/services/...
+# 2. Cloud Run に環境変数を設定（初回のみ）
+gcloud run services update lyric-video \
+  --region asia-northeast1 \
+  --set-env-vars "\
+GCS_BUCKET=your-bucket,\
+CLOUD_TASKS_QUEUE_ID=lyric-video-queue,\
+SERVICE_ACCOUNT_EMAIL=sa@project.iam.gserviceaccount.com,\
+SERVICE_URL=https://your-service-url,\
+GOOGLE_CLIENT_ID=your-client-id,\
+GOOGLE_CLIENT_SECRET=your-client-secret,\
+SESSION_SECRET=$(python3 -c 'import secrets; print(secrets.token_hex(32))'),\
+SLACK_WEBHOOK_URL=https://hooks.slack.com/services/...,\
+ALLOWED_EMAILS=you@example.com"
+
+# 3. Cloud Build でビルド＆デプロイ
+gcloud builds submit --config=cloudbuild.yaml
 ```
+
+> **注意:** 環境変数は Cloud Run に直接設定します。`cloudbuild.yaml` はビルド・デプロイのみを行い、秘密情報は上書きしません。
 
 > **サービスアカウントの必要権限:**
 > - `roles/storage.objectAdmin`（GCS 読み書き）
