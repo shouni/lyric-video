@@ -66,8 +66,11 @@ def post_form():
         return render_template(
             "new.html",
             error=error,
-            whisper_model=cfg.whisper_model,
+            whisper_model=task.whisper_model,
             csrf_token=session.get("csrf_token"),
+            audio_url=task.audio_url,
+            keyframes_url=task.keyframes_url,
+            subs_url=task.subs_url,
         ), status
 
     try:

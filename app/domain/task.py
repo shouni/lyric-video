@@ -44,20 +44,22 @@ class Task:
         if self.whisper_model not in {"large-v3", "medium", "small", "base"}:
             errors.append(f"invalid whisper_model: {self.whisper_model!r}")
 
-        def _check_uri(url: str, field: str, required: bool = True) -> None:
-            """各URLが必須条件と許可バケット制約を満たすか確認する。"""
+        def _check_gcs_uri(url: str, field: str, required: bool = True) -> None:
             if not url:
                 if required:
                     errors.append(f"{field} is required")
                 return
             if not url.startswith("gs://"):
                 errors.append(f"{field} must be a GCS URI (gs://...)")
-            elif allowed_bucket and not url.startswith(f"gs://{allowed_bucket}/"):
+
+        def _check_output_uri(url: str, field: str) -> None:
+            _check_gcs_uri(url, field, required=False)
+            if url and allowed_bucket and not url.startswith(f"gs://{allowed_bucket}/"):
                 errors.append(f"{field} must be within bucket: {allowed_bucket}")
 
-        _check_uri(self.audio_url, "audio_url")
-        _check_uri(self.keyframes_url, "keyframes_url")
-        _check_uri(self.subs_url, "subs_url", required=False)
-        _check_uri(self.output_prefix, "output_prefix", required=False)
+        _check_gcs_uri(self.audio_url, "audio_url")
+        _check_gcs_uri(self.keyframes_url, "keyframes_url")
+        _check_gcs_uri(self.subs_url, "subs_url", required=False)
+        _check_output_uri(self.output_prefix, "output_prefix")
         if errors:
             raise ValueError("; ".join(errors))
