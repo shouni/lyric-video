@@ -16,6 +16,7 @@ _GOOGLE_AUTH_REQUEST = google_requests.Request()
 
 @worker_bp.route("/tasks/generate", methods=["POST"])
 def process_task():
+    """Cloud Tasksから受け取ったジョブを検証し、動画生成パイプラインを実行する。"""
     cfg = current_app.config_obj
     notifier = current_app.notifier
     pipeline = current_app.pipeline
@@ -44,6 +45,7 @@ def process_task():
 
 
 def _verify_oidc_token(authorization: str, audience: str) -> bool:
+    """AuthorizationヘッダーのOIDCトークンを指定audienceで検証する。"""
     if not audience:
         logger.error("TASK_AUDIENCE_URL not configured — denying request to be safe")
         return False

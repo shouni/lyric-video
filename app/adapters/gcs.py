@@ -7,7 +7,23 @@ from functools import lru_cache
 from google.cloud import storage
 
 
+def download(uri: str, local_path: str) -> None:
+    """GCS上のオブジェクトをローカルパスへダウンロードする。"""
+    bucket_name, blob_name = _parse(uri)
+    os.makedirs(os.path.dirname(os.path.abspath(local_path)), exist_ok=True)
+    _get_client().bucket(bucket_name).blob(blob_name).download_to_filename(local_path)
+
+
+def upload(local_path: str, uri: str) -> None:
+    """ローカルファイルを指定されたGCS URIへアップロードする。"""
+    bucket_name, blob_name = _parse(uri)
+    blob = _get_client().bucket(bucket_name).blob(blob_name)
+    content_type, _ = mimetypes.guess_type(local_path)
+    blob.upload_from_filename(local_path, content_type=content_type or "application/octet-stream")
+
+
 def _parse(uri: str) -> tuple[str, str]:
+    """GCS URIをバケット名とオブジェクト名に分解する。"""
     if not uri.startswith("gs://"):
         raise ValueError(f"not a GCS URI: {uri!r}")
     path = uri[len("gs://"):]
@@ -19,17 +35,5 @@ def _parse(uri: str) -> tuple[str, str]:
 
 @lru_cache(maxsize=1)
 def _get_client() -> storage.Client:
+    """再利用可能なGoogle Cloud Storageクライアントを取得する。"""
     return storage.Client()
-
-
-def download(uri: str, local_path: str) -> None:
-    bucket_name, blob_name = _parse(uri)
-    os.makedirs(os.path.dirname(os.path.abspath(local_path)), exist_ok=True)
-    _get_client().bucket(bucket_name).blob(blob_name).download_to_filename(local_path)
-
-
-def upload(local_path: str, uri: str) -> None:
-    bucket_name, blob_name = _parse(uri)
-    blob = _get_client().bucket(bucket_name).blob(blob_name)
-    content_type, _ = mimetypes.guess_type(local_path)
-    blob.upload_from_filename(local_path, content_type=content_type or "application/octet-stream")

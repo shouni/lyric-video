@@ -12,6 +12,7 @@ auth_bp = Blueprint("auth", __name__, url_prefix="/auth")
 
 
 def init_oauth(app, client_id: str, client_secret: str) -> None:
+    """FlaskアプリにGoogle OAuthクライアントを登録する。"""
     _oauth.init_app(app)
     _oauth.register(
         name="google",
@@ -24,6 +25,7 @@ def init_oauth(app, client_id: str, client_secret: str) -> None:
 
 @auth_bp.route("/login")
 def login():
+    """ログイン画面またはGoogle OAuth認可画面へ誘導する。"""
     error = request.args.get("error")
     if error:
         return render_template("login.html", error=error)
@@ -33,6 +35,7 @@ def login():
 
 @auth_bp.route("/callback")
 def callback():
+    """Google OAuthのコールバックを処理し、許可済みユーザーをセッションへ保存する。"""
     try:
         token = _oauth.google.authorize_access_token()
     except Exception as exc:
@@ -54,15 +57,18 @@ def callback():
 
 @auth_bp.route("/logout")
 def logout():
+    """セッションを破棄してログイン画面へ戻す。"""
     session.clear()
     return redirect(url_for("auth.login"), 303)
 
 
 def get_user_email() -> str | None:
+    """現在ログイン中のユーザーのメールアドレスを返す。"""
     return session.get("user_email")
 
 
 def _is_allowed(email: str, allowed_emails: list[str], allowed_domains: list[str]) -> bool:
+    """メールアドレスまたはドメインが許可リストに含まれるか判定する。"""
     if not allowed_emails and not allowed_domains:
         logger.error("No ALLOWED_EMAILS or ALLOWED_DOMAINS configured — denying access by default")
         return False
