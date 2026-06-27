@@ -14,6 +14,7 @@ web_bp = Blueprint("web", __name__)
 
 @web_bp.route("/", methods=["GET"])
 def get_form():
+    """入力フォームを表示し、初回アクセス時はCSRFトークンを発行する。"""
     cfg = current_app.config_obj
     if "csrf_token" not in session:
         session["csrf_token"] = secrets.token_hex(16)
@@ -27,6 +28,7 @@ def get_form():
 
 @web_bp.route("/", methods=["POST"])
 def post_form():
+    """フォーム送信を受け取り、入力値を検証してCloud Tasksへジョブを登録する。"""
     token = session.get("csrf_token")
     if not token or token != request.form.get("csrf_token"):
         abort(403)
@@ -46,6 +48,7 @@ def post_form():
     )
 
     def render_error(error: str, status: int):
+        """エラー内容を入力フォームへ戻して指定ステータスで返す。"""
         return render_template(
             "index.html",
             error=error,

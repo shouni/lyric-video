@@ -18,7 +18,7 @@ _SCRIPTS_DIR = Path(__file__).resolve().parent.parent
 
 class PipelineRunner:
     def run(self, task: Task) -> str:
-        """Run the full pipeline and return the output GCS URI."""
+        """入力素材を取得し、字幕生成・焼き込み・アップロードまでの全工程を実行する。"""
         with tempfile.TemporaryDirectory(prefix="lyric_video_") as work_dir:
             work = Path(work_dir)
 
@@ -52,12 +52,14 @@ class PipelineRunner:
                     Path(p).unlink(missing_ok=True)
 
     def _run_align(self, audio: str, keyframes: str, output_ass: str, model: str) -> None:
+        """音声と元字幕からカラオケタイミング付きASS字幕を生成する。"""
         script = str(_SCRIPTS_DIR / "align_subtitles.py")
         cmd = [sys.executable, script, audio, keyframes, output_ass, "--model", model]
         logger.info("Running align_subtitles model=%s", model)
         _run_subprocess(cmd, "align_subtitles")
 
     def _run_burn(self, audio: str, keyframes: str, output: str, subs: str) -> None:
+        """ASS字幕をキーフレーム画像へ焼き込み、MP4を生成する。"""
         script = str(_SCRIPTS_DIR / "burn_subs.py")
         cmd = [sys.executable, script, audio, keyframes, output, "--subs", subs]
         logger.info("Running burn_subs")
@@ -65,11 +67,13 @@ class PipelineRunner:
 
 
 def _stream(pipe, log_fn):
+    """サブプロセスの出力を1行ずつ指定されたログ関数へ流す。"""
     for line in iter(pipe.readline, ""):
         log_fn(line.rstrip())
 
 
 def _run_subprocess(cmd: list[str], name: str) -> None:
+    """サブプロセスを実行し、標準出力と標準エラーをログへ転送する。"""
     with subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True) as proc:
         t_out = threading.Thread(target=_stream, args=(proc.stdout, logger.info))
         t_err = threading.Thread(target=_stream, args=(proc.stderr, logger.warning))

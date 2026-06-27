@@ -26,13 +26,16 @@ class Config:
     allowed_domains: list[str] = field(default_factory=list)
 
     def is_secure_url(self) -> bool:
+        """サービスURLがHTTPSかどうかを返す。"""
         return self.service_url.startswith("https://")
 
     def default_output_prefix(self) -> str:
+        """設定済みのGCSバケットと出力接頭辞からデフォルト出力先を作る。"""
         return f"gs://{self.gcs_bucket}/{self.gcs_output_prefix}" if self.gcs_bucket else ""
 
     @classmethod
     def from_env(cls) -> "Config":
+        """環境変数からアプリケーション設定を読み込む。"""
         service_url = os.getenv("SERVICE_URL", "http://localhost:8080").rstrip("/")
         worker_url = os.getenv("WORKER_URL", "").strip()
         if not worker_url:
@@ -60,6 +63,7 @@ class Config:
 
 
 def _require_env(key: str) -> str:
+    """必須環境変数を取得し、未設定なら例外を送出する。"""
     value = os.getenv(key, "").strip()
     if not value:
         raise ValueError(f"{key} environment variable is required")
@@ -67,4 +71,5 @@ def _require_env(key: str) -> str:
 
 
 def _split_env(key: str) -> list[str]:
+    """カンマ区切りの環境変数を小文字のリストへ変換する。"""
     return [v.strip().lower() for v in os.getenv(key, "").split(",") if v.strip()]

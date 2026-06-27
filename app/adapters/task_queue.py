@@ -18,6 +18,7 @@ class CloudTasksQueue:
         service_account_email: str,
         audience: str,
     ) -> None:
+        """Cloud Tasksキューへの接続情報とワーカー呼び出し設定を初期化する。"""
         self._client = tasks_v2.CloudTasksClient()
         self._parent = self._client.queue_path(project_id, location_id, queue_id)
         self._worker_url = worker_url
@@ -25,6 +26,7 @@ class CloudTasksQueue:
         self._audience = audience
 
     def enqueue(self, payload: dict) -> None:
+        """ペイロードをHTTPタスクとしてCloud Tasksへ登録する。"""
         task = {
             "http_request": {
                 "http_method": tasks_v2.HttpMethod.POST,

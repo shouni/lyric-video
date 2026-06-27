@@ -25,6 +25,7 @@ _PUBLIC_PATHS = {"/healthz", "/auth/login", "/auth/callback", "/tasks/generate"}
 
 
 def create_app() -> Flask:
+    """Flaskアプリを生成し、設定・認証・外部サービス・Blueprintを初期化する。"""
     cfg = Config.from_env()
 
     app = Flask(__name__, template_folder="../templates", static_folder="../static")
@@ -64,6 +65,7 @@ def create_app() -> Flask:
 
     @app.before_request
     def check_auth():
+        """公開パス以外へのアクセスにログイン済みセッションを要求する。"""
         if request.path in _PUBLIC_PATHS:
             return None
         if not get_user_email():
@@ -71,6 +73,7 @@ def create_app() -> Flask:
 
     @app.get("/healthz")
     def healthz():
+        """ヘルスチェック用の最小レスポンスを返す。"""
         return {"status": "ok"}
 
     logger.info("Application created port=%s", cfg.port)
