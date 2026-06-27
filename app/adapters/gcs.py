@@ -50,7 +50,11 @@ def list_job_metadata(output_prefix: str) -> list[dict]:
 
     def _download(blob):
         try:
-            return json.loads(blob.download_as_text())
+            data = json.loads(blob.download_as_text())
+            if not data.get("job_id"):
+                # blob.name 例: lyric-video/output/<job_id>/meta.json
+                data["job_id"] = blob.name.split("/")[-2]
+            return data
         except Exception:
             return None
 
