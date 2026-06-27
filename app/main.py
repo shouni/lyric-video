@@ -28,6 +28,11 @@ def create_app() -> Flask:
 
     app = Flask(__name__, template_folder="../templates")
     app.secret_key = cfg.session_secret
+    app.config.update(
+        SESSION_COOKIE_SECURE=cfg.is_secure_url(),
+        SESSION_COOKIE_HTTPONLY=True,
+        SESSION_COOKIE_SAMESITE="Lax",
+    )
 
     init_oauth(app, cfg.google_client_id, cfg.google_client_secret)
 

@@ -17,12 +17,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY . .
 
-# Optional: pre-download Whisper model to warm up cold starts.
-# Adds ~3 GB to image. Uncomment if you prefer fast task start over small image.
-# ARG WHISPER_MODEL=large-v3
-# RUN python3 -c "import whisper; whisper.load_model('large-v3')"
+ARG WHISPER_MODEL=large-v3
+RUN python3 -c "import whisper; whisper.load_model('${WHISPER_MODEL}')"
 
 ENV PORT=8080
 EXPOSE 8080
 
-CMD ["gunicorn", "--bind", "0.0.0.0:8080", "--workers", "1", "--timeout", "1800", "app.main:app"]
+CMD ["gunicorn", "--bind", "0.0.0.0:8080", "--workers", "1", "--threads", "8", "--timeout", "1800", "app.main:app"]

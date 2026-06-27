@@ -17,7 +17,7 @@
 ブラウザ（Google OAuth2 認証済み）
   │  GCS URL をフォームで入力
   ▼
-Cloud Run (FastAPI)
+Cloud Run (Flask)
   │  job_id を生成してキューに投入
   ▼
 Cloud Tasks
@@ -62,7 +62,7 @@ export SESSION_SECRET=any-random-string
 export GOOGLE_CLIENT_ID=...
 export GOOGLE_CLIENT_SECRET=...
 
-uvicorn app.main:app --reload --port 8080
+flask --app app.main run --port 8080
 # → http://localhost:8080
 ```
 
@@ -134,7 +134,8 @@ duration 50.000
 | [Pillow](https://pillow.readthedocs.io/) | PNG 画像への字幕描画 |
 | [pysubs2](https://pysubs2.readthedocs.io/) | ASS 字幕ファイルのパース |
 | [ffmpeg](https://ffmpeg.org/) | 動画エンコード・音声合成 |
-| [FastAPI](https://fastapi.tiangolo.com/) | Web サーバー |
+| [Flask](https://flask.palletsprojects.com/) | Web サーバー |
+| [gunicorn](https://gunicorn.org/) | 本番 WSGI サーバー |
 | [Authlib](https://docs.authlib.org/) | Google OAuth2 認証 |
 | [google-cloud-tasks](https://cloud.google.com/tasks) | 非同期タスクキュー |
 | [google-cloud-storage](https://cloud.google.com/storage) | GCS ファイル入出力 |
