@@ -11,7 +11,12 @@
         <p class="text-muted small">Job ID</p>
         <div class="bg-light border rounded p-3 font-monospace mb-3 text-break">{{ job_id }}</div>
         <p class="text-muted small">処理が完了または失敗したとき、Slack に通知されます。</p>
-        <a href="/" class="text-decoration-none small">← 新しいジョブを作成</a>
+        <div class="d-flex gap-3">
+          <a href="/jobs/{{ job_id }}" class="btn btn-outline-primary btn-sm">
+            <i class="bi bi-eye me-1"></i>ジョブの詳細
+          </a>
+          <a href="/" class="btn btn-link btn-sm text-muted text-decoration-none">← 新しいジョブを作成</a>
+        </div>
       </div>
     </div>
   </div>

@@ -1,0 +1,100 @@
+{% extends "layout.html" %}
+
+{% block title %}{{ job.job_id }} — Lyric Video{% endblock %}
+
+{% block content %}
+<div class="card shadow-sm border-0">
+  <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center p-3">
+    <h3 class="mb-0 fs-6 fw-bold font-monospace text-truncate">{{ job.job_id }}</h3>
+    {% set s = job.status %}
+    <span class="badge badge-{{ s }} ms-2 flex-shrink-0">
+      {% if s == 'queued' %}<i class="bi bi-hourglass me-1"></i>待機中
+      {% elif s == 'running' %}<i class="bi bi-arrow-repeat me-1"></i>処理中
+      {% elif s == 'complete' %}<i class="bi bi-check-circle me-1"></i>完了
+      {% elif s == 'failed' %}<i class="bi bi-x-circle me-1"></i>失敗
+      {% else %}{{ s }}{% endif %}
+    </span>
+  </div>
+
+  <div class="card-body p-4">
+    <!-- タブ -->
+    <ul class="nav app-tabs mb-4" id="jobTab" role="tablist">
+      <li class="nav-item" role="presentation">
+        <button class="nav-link active" id="video-tab" data-bs-toggle="tab" data-bs-target="#video-panel"
+                type="button" role="tab">
+          <i class="bi bi-play-circle me-2"></i>動画
+        </button>
+      </li>
+      <li class="nav-item" role="presentation">
+        <button class="nav-link" id="detail-tab" data-bs-toggle="tab" data-bs-target="#detail-panel"
+                type="button" role="tab">
+          <i class="bi bi-info-circle me-2"></i>詳細
+        </button>
+      </li>
+    </ul>
+
+    <div class="tab-content pt-2" id="jobTabContent">
+      <!-- 動画パネル -->
+      <div class="tab-pane fade show active" id="video-panel" role="tabpanel">
+        {% if signed_url %}
+        <div class="video-player-unit mb-4">
+          <div class="d-flex justify-content-between align-items-center mb-3">
+            <small class="text-secondary fw-bold"><i class="bi bi-film me-1"></i>VIDEO PREVIEW</small>
+            <a href="{{ signed_url }}" download="output.mp4" class="btn btn-sm btn-outline-light">
+              <i class="bi bi-download me-1"></i>MP4 ダウンロード
+            </a>
+          </div>
+          <video controls src="{{ signed_url }}" class="w-100 rounded" preload="metadata"
+                 style="max-height: 480px;">
+            お使いのブラウザは動画再生に対応していません。
+          </video>
+        </div>
+        {% elif s == 'failed' %}
+        <div class="alert alert-danger">
+          <i class="bi bi-x-circle me-2"></i>処理が失敗しました。
+          {% if job.error %}<div class="mt-2 font-monospace small">{{ job.error }}</div>{% endif %}
+        </div>
+        {% else %}
+        <div class="alert alert-info">
+          <i class="bi bi-hourglass-split me-2"></i>動画はまだ生成されていません。処理完了後に再度ご確認ください。
+        </div>
+        {% endif %}
+      </div>
+
+      <!-- 詳細パネル -->
+      <div class="tab-pane fade" id="detail-panel" role="tabpanel">
+        <table class="table table-sm table-hover">
+          <tbody>
+            <tr><th class="w-25 text-muted">Job ID</th><td class="font-monospace">{{ job.job_id }}</td></tr>
+            <tr><th class="text-muted">作成日時</th><td>{{ job.created_at[:19].replace('T', ' ') if job.created_at else '—' }}</td></tr>
+            <tr><th class="text-muted">ステータス</th><td>{{ job.status }}</td></tr>
+            <tr><th class="text-muted">Whisper モデル</th><td>{{ job.whisper_model or '—' }}</td></tr>
+            <tr><th class="text-muted">Audio URL</th><td class="text-break small font-monospace">{{ job.audio_url }}</td></tr>
+            <tr><th class="text-muted">Keyframes URL</th><td class="text-break small font-monospace">{{ job.keyframes_url }}</td></tr>
+            {% if job.subs_url %}
+            <tr><th class="text-muted">ASS URL</th><td class="text-break small font-monospace">{{ job.subs_url }}</td></tr>
+            {% endif %}
+            {% if job.output_uri %}
+            <tr><th class="text-muted">出力 GCS</th><td class="text-break small font-monospace">{{ job.output_uri }}</td></tr>
+            {% endif %}
+            {% if job.error %}
+            <tr><th class="text-muted">エラー</th><td class="text-danger small">{{ job.error }}</td></tr>
+            {% endif %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="card-footer d-flex justify-content-between align-items-center bg-light p-3 border-top">
+    <a href="/jobs" class="btn btn-link text-secondary text-decoration-none">
+      <i class="bi bi-arrow-left me-1"></i>履歴一覧へ戻る
+    </a>
+    {% if signed_url %}
+    <a href="{{ signed_url }}" download="output.mp4" class="btn btn-outline-primary btn-sm">
+      <i class="bi bi-download me-1"></i>MP4 ダウンロード
+    </a>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

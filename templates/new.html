@@ -1,17 +1,19 @@
 {% extends "layout.html" %}
 
-{% block title %}Lyric Video{% endblock %}
+{% block title %}新規作成 — Lyric Video{% endblock %}
 
 {% block content %}
 <div class="row justify-content-center">
   <div class="col-12 col-md-8 col-lg-6">
+    <h2 class="mb-4"><i class="bi bi-film me-2"></i>新規作成</h2>
+
     {% if error %}
     <div class="alert alert-danger">{{ error }}</div>
     {% endif %}
 
     <div class="card shadow-sm">
       <div class="card-body p-4">
-        <form method="post" action="/">
+        <form method="post" action="/new">
           <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
 
           <div class="mb-3">
