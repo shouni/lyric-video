@@ -44,9 +44,12 @@ class SlackNotifier:
             logger.error("Failed to send Slack notification job_id=%s: %s", job_id, exc)
 
     def notify_error(self, job_id: str, error: Exception | str) -> None:
+        error_msg = str(error)
+        if len(error_msg) > 500:
+            error_msg = error_msg[:500] + " ... (truncated)"
         lines = [
             f"*Job ID:* `{job_id}`",
-            f"*Error:* {error}",
+            f"*Error:* {error_msg}",
         ]
         try:
             self._send(_ERROR_TITLE, "\n".join(lines))

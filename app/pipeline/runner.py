@@ -45,6 +45,10 @@ class PipelineRunner:
             logger.info("Uploading output to %s", output_uri)
             gcs.upload(output_path, output_uri)
 
+            # Free tmpfs (RAM) early — large files no longer needed after upload
+            for p in (audio_path, keyframes_path, ass_path, output_path):
+                Path(p).unlink(missing_ok=True)
+
             return output_uri
 
     def _run_align(self, audio: str, keyframes: str, output_ass: str, model: str) -> None:

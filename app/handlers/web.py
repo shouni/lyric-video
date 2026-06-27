@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import logging
+import secrets
 from dataclasses import asdict
 
-from flask import Blueprint, current_app, render_template, request
+from flask import Blueprint, abort, current_app, render_template, request, session
 
 from app.domain.task import Task, new_job_id
 
@@ -14,11 +15,22 @@ web_bp = Blueprint("web", __name__)
 @web_bp.route("/", methods=["GET"])
 def get_form():
     cfg = current_app.config_obj
-    return render_template("index.html", default_output=cfg.default_output_prefix(), whisper_model=cfg.whisper_model)
+    if "csrf_token" not in session:
+        session["csrf_token"] = secrets.token_hex(16)
+    return render_template(
+        "index.html",
+        default_output=cfg.default_output_prefix(),
+        whisper_model=cfg.whisper_model,
+        csrf_token=session["csrf_token"],
+    )
 
 
 @web_bp.route("/", methods=["POST"])
 def post_form():
+    token = session.get("csrf_token")
+    if not token or token != request.form.get("csrf_token"):
+        abort(403)
+
     cfg = current_app.config_obj
     queue = current_app.queue
 

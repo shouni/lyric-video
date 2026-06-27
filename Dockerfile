@@ -17,8 +17,14 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY . .
 
+# Pre-download Whisper model into /app/.cache (XDG_CACHE_HOME) so it survives user switch
 ARG WHISPER_MODEL=large-v3
+ENV XDG_CACHE_HOME=/app/.cache
 RUN python3 -c "import whisper; whisper.load_model('${WHISPER_MODEL}')"
+
+# Non-root user (PoLP); chown after model download so cache is accessible
+RUN useradd -r -u 1001 appuser && chown -R appuser /app
+USER appuser
 
 ENV PORT=8080
 EXPOSE 8080

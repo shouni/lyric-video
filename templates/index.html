@@ -85,6 +85,7 @@
     {% endif %}
 
     <form method="post" action="/" style="margin-top:0">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <div class="field">
         <label>Audio GCS URL</label>
         <input type="text" name="audio_url" placeholder="gs://bucket/path/to/audio.mp3" required>
