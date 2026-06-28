@@ -82,6 +82,15 @@ def process_youtube():
 
     output_prefix = cfg.default_output_prefix()
     meta_uri = f"{output_prefix.rstrip('/')}/{yt_task.job_id}/meta.json"
+
+    try:
+        meta = gcs.load_json(meta_uri)
+        if meta.get("youtube_status") == "complete" or meta.get("youtube_url"):
+            logger.info("YouTube upload already completed job_id=%s", yt_task.job_id)
+            return jsonify({"status": "already_completed"}), 200
+    except Exception as exc:
+        logger.warning("Failed to check meta job_id=%s: %s", yt_task.job_id, exc)
+
     _update_meta(meta_uri, {"youtube_status": "uploading"})
 
     logger.info("Starting YouTube upload job_id=%s", yt_task.job_id)
@@ -105,6 +114,9 @@ def process_youtube():
         logger.error("YouTube upload failed job_id=%s: %s", yt_task.job_id, exc, exc_info=True)
         _update_meta(meta_uri, {"youtube_status": "failed", "youtube_error": str(exc)})
         notifier.notify_error(yt_task.job_id, f"YouTube upload failed: {exc}")
+        if hasattr(exc, "resp") and hasattr(exc.resp, "status") and 400 <= exc.resp.status < 500:
+            logger.info("Dropping unrecoverable task job_id=%s status=%s", yt_task.job_id, exc.resp.status)
+            return jsonify({"error": str(exc), "dropped": True}), 200
         return jsonify({"error": str(exc)}), 500
 
 

@@ -181,13 +181,19 @@ if (ytForm) {
     const btn = ytForm.querySelector('button[type=submit]');
     btn.disabled = true;
     btn.textContent = 'キュー追加中...';
-    const resp = await fetch(ytForm.action, { method: 'POST', body: new FormData(ytForm) });
-    if (resp.ok) {
-      location.reload();
-    } else {
+    try {
+      const resp = await fetch(ytForm.action, { method: 'POST', body: new FormData(ytForm) });
+      if (resp.ok) {
+        location.reload();
+      } else {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-youtube me-1"></i>アップロード開始';
+        alert('キュー追加に失敗しました: ' + resp.status);
+      }
+    } catch (err) {
       btn.disabled = false;
       btn.innerHTML = '<i class="bi bi-youtube me-1"></i>アップロード開始';
-      alert('キュー追加に失敗しました: ' + resp.status);
+      alert('通信エラーが発生しました: ' + err.message);
     }
   });
 }
