@@ -49,6 +49,57 @@
             お使いのブラウザは動画再生に対応していません。
           </video>
         </div>
+        {% if job.youtube_url %}
+        <div class="alert alert-danger d-flex align-items-center gap-2 py-2 mt-3">
+          <i class="bi bi-youtube fs-5"></i>
+          <a href="{{ job.youtube_url }}" target="_blank" rel="noopener" class="alert-link fw-semibold">
+            {{ job.youtube_url }}
+          </a>
+        </div>
+        {% elif youtube_enabled and s == 'complete' %}
+        <div class="card border-secondary mt-3">
+          <div class="card-header bg-transparent fw-semibold">
+            <i class="bi bi-youtube me-1 text-danger"></i>YouTube に公開
+          </div>
+          <div class="card-body">
+            {% if job.youtube_status == 'queued' or job.youtube_status == 'uploading' %}
+            <div class="alert alert-info mb-0">
+              <i class="bi bi-hourglass-split me-2"></i>YouTubeアップロード中...
+            </div>
+            {% elif job.youtube_status == 'failed' %}
+            <div class="alert alert-danger mb-2">
+              <i class="bi bi-x-circle me-2"></i>{{ job.youtube_error or 'アップロードに失敗しました' }}
+            </div>
+            {% endif %}
+            <form method="post" action="/jobs/{{ job.job_id }}/youtube" id="youtube-form">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <div class="mb-3">
+                <label class="form-label fw-semibold">タイトル <span class="text-danger">*</span></label>
+                <input type="text" class="form-control" name="youtube_title" required maxlength="100">
+              </div>
+              <div class="mb-3">
+                <label class="form-label fw-semibold">説明 <span class="text-muted fw-normal">(省略可)</span></label>
+                <textarea class="form-control" name="youtube_description" rows="3"></textarea>
+              </div>
+              <div class="mb-3">
+                <label class="form-label fw-semibold">タグ <span class="text-muted fw-normal">(カンマ区切り・省略可)</span></label>
+                <input type="text" class="form-control" name="youtube_tags" placeholder="J-POP, カラオケ, 歌詞動画">
+              </div>
+              <div class="mb-3">
+                <label class="form-label fw-semibold">公開設定</label>
+                <select class="form-select" name="youtube_privacy">
+                  <option value="private" selected>非公開</option>
+                  <option value="unlisted">限定公開</option>
+                  <option value="public">公開</option>
+                </select>
+              </div>
+              <button type="submit" class="btn btn-danger">
+                <i class="bi bi-youtube me-1"></i>アップロード開始
+              </button>
+            </form>
+          </div>
+        </div>
+        {% endif %}
         {% elif s == 'failed' %}
         <div class="alert alert-danger">
           <i class="bi bi-x-circle me-2"></i>処理が失敗しました。
@@ -76,6 +127,12 @@
             {% endif %}
             {% if job.output_uri %}
             <tr><th class="text-muted">出力 GCS</th><td class="text-break small font-monospace">{{ job.output_uri }}</td></tr>
+            {% endif %}
+            {% if job.youtube_url %}
+            <tr>
+              <th class="text-muted">YouTube</th>
+              <td><a href="{{ job.youtube_url }}" target="_blank" rel="noopener">{{ job.youtube_url }}</a></td>
+            </tr>
             {% endif %}
             {% if job.error %}
             <tr><th class="text-muted">エラー</th><td class="text-danger small">{{ job.error }}</td></tr>
@@ -115,6 +172,24 @@ async function deleteJob(jobId, csrfToken) {
   } else {
     alert('削除に失敗しました: ' + resp.status);
   }
+}
+
+const ytForm = document.getElementById('youtube-form');
+if (ytForm) {
+  ytForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = ytForm.querySelector('button[type=submit]');
+    btn.disabled = true;
+    btn.textContent = 'キュー追加中...';
+    const resp = await fetch(ytForm.action, { method: 'POST', body: new FormData(ytForm) });
+    if (resp.ok) {
+      location.reload();
+    } else {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="bi bi-youtube me-1"></i>アップロード開始';
+      alert('キュー追加に失敗しました: ' + resp.status);
+    }
+  });
 }
 </script>
 {% endblock %}

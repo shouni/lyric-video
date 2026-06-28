@@ -25,12 +25,12 @@ class CloudTasksQueue:
         self._service_account_email = service_account_email
         self._audience = audience
 
-    def enqueue(self, payload: dict) -> None:
+    def enqueue(self, payload: dict, worker_url: str | None = None) -> None:
         """ペイロードをHTTPタスクとしてCloud Tasksへ登録する。"""
         task = {
             "http_request": {
                 "http_method": tasks_v2.HttpMethod.POST,
-                "url": self._worker_url,
+                "url": worker_url or self._worker_url,
                 "headers": {"Content-Type": "application/json"},
                 "body": json.dumps(payload).encode(),
                 "oidc_token": {

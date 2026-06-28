@@ -22,6 +22,10 @@ class Config:
     google_client_id: str
     google_client_secret: str
     session_secret: str
+    # YouTube Data API
+    youtube_client_id: str
+    youtube_client_secret: str
+    youtube_refresh_token: str
     allowed_emails: list[str] = field(default_factory=list)
     allowed_domains: list[str] = field(default_factory=list)
 
@@ -57,6 +61,9 @@ class Config:
             google_client_id=os.getenv("GOOGLE_CLIENT_ID", ""),
             google_client_secret=os.getenv("GOOGLE_CLIENT_SECRET", ""),
             session_secret=_require_env("SESSION_SECRET"),
+            youtube_client_id=os.getenv("YOUTUBE_CLIENT_ID", ""),
+            youtube_client_secret=os.getenv("YOUTUBE_CLIENT_SECRET", ""),
+            youtube_refresh_token=os.getenv("YOUTUBE_REFRESH_TOKEN", ""),
             allowed_emails=_split_env("ALLOWED_EMAILS"),
             allowed_domains=_split_env("ALLOWED_DOMAINS"),
         )
