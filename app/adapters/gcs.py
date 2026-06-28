@@ -72,19 +72,22 @@ def delete(uri: str) -> None:
     blob.delete(if_generation_match=None)
 
 
-def generate_signed_url(uri: str, service_account_email: str, expiration_hours: int = 1) -> str:
+def generate_signed_url(uri: str, service_account_email: str, expiration_hours: int = 1, filename: str | None = None) -> str:
     """GCSオブジェクトへの時限アクセスURLを生成する。"""
     credentials, _ = google.auth.default(scopes=["https://www.googleapis.com/auth/cloud-platform"])
     credentials.refresh(google_requests.Request())
     bucket_name, blob_name = _parse(uri)
     blob = _get_client().bucket(bucket_name).blob(blob_name)
-    return blob.generate_signed_url(
+    kwargs: dict = dict(
         version="v4",
         expiration=datetime.timedelta(hours=expiration_hours),
         method="GET",
         service_account_email=service_account_email,
         access_token=credentials.token,
     )
+    if filename:
+        kwargs["response_disposition"] = f'attachment; filename="{filename}"'
+    return blob.generate_signed_url(**kwargs)
 
 
 def _parse(uri: str) -> tuple[str, str]:

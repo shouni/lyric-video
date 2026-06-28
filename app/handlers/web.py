@@ -159,13 +159,15 @@ def job_detail(job_id: str):
         abort(404)
 
     signed_url = None
+    download_url = None
     if job.get("output_uri") and cfg.service_account_email:
         try:
             signed_url = gcs.generate_signed_url(job["output_uri"], cfg.service_account_email)
+            download_url = gcs.generate_signed_url(job["output_uri"], cfg.service_account_email, filename="output.mp4")
         except Exception as exc:
             logger.error("Failed to generate signed URL job_id=%s: %s", job_id, exc)
 
-    return render_template("job_detail.html", job=job, signed_url=signed_url,
+    return render_template("job_detail.html", job=job, signed_url=signed_url, download_url=download_url,
                            csrf_token=session["csrf_token"])
 
 
