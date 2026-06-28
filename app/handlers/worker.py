@@ -8,6 +8,7 @@ from google.oauth2 import id_token
 
 from app.adapters import gcs
 from app.domain.task import Task
+from app.domain.youtube_task import YouTubeTask
 
 logger = logging.getLogger(__name__)
 worker_bp = Blueprint("worker", __name__)
@@ -56,6 +57,66 @@ def process_task():
         logger.error("Task failed job_id=%s: %s", task.job_id, exc, exc_info=True)
         _update_meta(meta_uri, {"status": "failed", "error": str(exc)})
         notifier.notify_error(task.job_id, exc)
+        return jsonify({"error": str(exc)}), 500
+
+
+@worker_bp.route("/tasks/youtube", methods=["POST"])
+def process_youtube():
+    """Cloud Tasksから受け取ったYouTubeアップロードジョブを実行する。"""
+    cfg = current_app.config_obj
+    notifier = current_app.notifier
+    uploader = current_app.youtube_uploader
+
+    auth_header = request.headers.get("Authorization", "")
+    if not _verify_oidc_token(auth_header, cfg.task_audience_url):
+        return jsonify({"error": "Unauthorized"}), 401
+
+    if uploader is None:
+        return jsonify({"error": "YouTube uploader not configured"}), 501
+
+    try:
+        yt_task = YouTubeTask.from_json(request.data)
+    except Exception as exc:
+        logger.error("Invalid YouTube task payload: %s", exc)
+        return jsonify({"error": str(exc)}), 400
+
+    output_prefix = cfg.default_output_prefix()
+    meta_uri = f"{output_prefix.rstrip('/')}/{yt_task.job_id}/meta.json"
+
+    try:
+        meta = gcs.load_json(meta_uri)
+        if meta.get("youtube_status") == "complete" or meta.get("youtube_url"):
+            logger.info("YouTube upload already completed job_id=%s", yt_task.job_id)
+            return jsonify({"status": "already_completed"}), 200
+    except Exception as exc:
+        logger.warning("Failed to check meta job_id=%s: %s", yt_task.job_id, exc)
+
+    _update_meta(meta_uri, {"youtube_status": "uploading"})
+
+    logger.info("Starting YouTube upload job_id=%s", yt_task.job_id)
+    try:
+        tags = [t.strip() for t in yt_task.tags.split(",") if t.strip()]
+        with gcs.open_blob(yt_task.output_uri) as f:
+            video_id = uploader.upload_from_stream(
+                f,
+                title=yt_task.title,
+                description=yt_task.description,
+                tags=tags,
+                privacy=yt_task.privacy,
+            )
+
+        youtube_url = f"https://youtu.be/{video_id}"
+        _update_meta(meta_uri, {"youtube_status": "complete", "youtube_url": youtube_url})
+        notifier.notify_complete(yt_task.job_id, yt_task.output_uri, youtube_url=youtube_url)
+        logger.info("YouTube upload complete job_id=%s url=%s", yt_task.job_id, youtube_url)
+        return jsonify({"job_id": yt_task.job_id, "youtube_url": youtube_url})
+    except Exception as exc:
+        logger.error("YouTube upload failed job_id=%s: %s", yt_task.job_id, exc, exc_info=True)
+        _update_meta(meta_uri, {"youtube_status": "failed", "youtube_error": str(exc)})
+        notifier.notify_error(yt_task.job_id, f"YouTube upload failed: {exc}")
+        if hasattr(exc, "resp") and hasattr(exc.resp, "status") and 400 <= exc.resp.status < 500:
+            logger.info("Dropping unrecoverable task job_id=%s status=%s", yt_task.job_id, exc.resp.status)
+            return jsonify({"error": str(exc), "dropped": True}), 200
         return jsonify({"error": str(exc)}), 500
 
 

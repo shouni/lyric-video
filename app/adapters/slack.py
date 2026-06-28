@@ -17,11 +17,13 @@ class SlackNotifier:
         self.webhook_url = webhook_url.strip()
         self.service_url = service_url.rstrip("/")
 
-    def notify_complete(self, job_id: str, output_uri: str) -> None:
+    def notify_complete(self, job_id: str, output_uri: str, youtube_url: str = "") -> None:
         """ジョブ完了時のSlack通知を送信する。"""
         lines = [f"*Job ID:* `{job_id}`"]
         if output_uri:
             lines.append(f"*Output:* `{output_uri}`")
+        if youtube_url:
+            lines.append(f"*YouTube:* {youtube_url}")
         try:
             self._send(_COMPLETE_TITLE, "\n".join(lines))
             logger.info("Slack completion notification sent job_id=%s", job_id)

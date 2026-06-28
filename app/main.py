@@ -10,6 +10,7 @@ from app.auth import auth_bp, get_user_email, init_oauth
 from app.config import Config
 from app.adapters.slack import SlackNotifier
 from app.adapters.task_queue import CloudTasksQueue
+from app.adapters.youtube import YouTubeUploader
 from app.pipeline.runner import PipelineRunner
 from app.handlers.web import web_bp
 from app.handlers.worker import worker_bp
@@ -21,7 +22,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-_PUBLIC_PATHS = {"/healthz", "/auth/login", "/auth/callback", "/tasks/generate"}
+_PUBLIC_PATHS = {"/healthz", "/auth/login", "/auth/callback", "/tasks/generate", "/tasks/youtube"}
 
 
 def create_app() -> Flask:
@@ -54,10 +55,16 @@ def create_app() -> Flask:
         except Exception as exc:
             logger.error("Failed to initialize Cloud Tasks queue: %s", exc)
 
+    youtube_uploader = None
+    if cfg.youtube_client_id and cfg.youtube_client_secret and cfg.youtube_refresh_token:
+        youtube_uploader = YouTubeUploader(cfg.youtube_client_id, cfg.youtube_client_secret, cfg.youtube_refresh_token)
+        logger.info("YouTube uploader initialized")
+
     app.config_obj = cfg
     app.queue = queue
     app.notifier = SlackNotifier(cfg.slack_webhook_url, cfg.service_url)
     app.pipeline = PipelineRunner()
+    app.youtube_uploader = youtube_uploader
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(web_bp)

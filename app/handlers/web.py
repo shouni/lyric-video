@@ -10,6 +10,7 @@ from flask import Blueprint, abort, current_app, render_template, request, sessi
 from app.adapters import gcs
 from app.domain.job import JobRecord
 from app.domain.task import Task, new_job_id
+from app.domain.youtube_task import YouTubeTask
 
 logger = logging.getLogger(__name__)
 web_bp = Blueprint("web", __name__)
@@ -110,6 +111,68 @@ def job_list():
     return render_template("jobs.html", jobs=jobs, error=error)
 
 
+@web_bp.route("/jobs/<job_id>/youtube", methods=["POST"])
+def publish_youtube(job_id: str):
+    """完了済みジョブの動画をYouTubeへアップロードするタスクをキューに追加する。"""
+    token = session.get("csrf_token")
+    if not token or token != request.form.get("csrf_token"):
+        abort(403)
+
+    cfg = current_app.config_obj
+    queue = current_app.queue
+    uploader = current_app.youtube_uploader
+
+    if uploader is None:
+        abort(501)
+    if queue is None:
+        abort(501)
+
+    output_prefix = cfg.default_output_prefix()
+    meta_uri = f"{output_prefix.rstrip('/')}/{job_id}/meta.json"
+    try:
+        job = gcs.load_json(meta_uri)
+    except Exception:
+        abort(404)
+
+    output_uri = job.get("output_uri", "")
+    if not output_uri:
+        abort(400)
+
+    title = request.form.get("youtube_title", "").strip()
+    if not title:
+        abort(400)
+
+    yt_task = YouTubeTask(
+        job_id=job_id,
+        output_uri=output_uri,
+        title=title,
+        description=request.form.get("youtube_description", "").strip(),
+        tags=request.form.get("youtube_tags", "").strip(),
+        privacy=request.form.get("youtube_privacy", "private"),
+    )
+
+    try:
+        job["youtube_status"] = "queued"
+        gcs.save_json(job, meta_uri)
+    except Exception as exc:
+        logger.warning("Failed to update meta for YouTube queue job_id=%s: %s", job_id, exc)
+
+    youtube_worker_url = cfg.service_url.rstrip("/") + "/tasks/youtube"
+    try:
+        queue.enqueue(asdict(yt_task), worker_url=youtube_worker_url)
+    except Exception as exc:
+        logger.error("Failed to enqueue YouTube task job_id=%s: %s", job_id, exc)
+        try:
+            job["youtube_status"] = "failed"
+            job["youtube_error"] = "Failed to enqueue task"
+            gcs.save_json(job, meta_uri)
+        except Exception:
+            pass
+        abort(502)
+
+    return "", 204
+
+
 @web_bp.route("/jobs/<job_id>", methods=["DELETE"])
 def delete_job(job_id: str):
     """ジョブのmeta.jsonと出力ファイルをGCSから削除する。"""
@@ -168,7 +231,8 @@ def job_detail(job_id: str):
             logger.error("Failed to generate signed URL job_id=%s: %s", job_id, exc)
 
     return render_template("job_detail.html", job=job, signed_url=signed_url, download_url=download_url,
-                           csrf_token=session["csrf_token"])
+                           csrf_token=session["csrf_token"],
+                           youtube_enabled=current_app.youtube_uploader is not None)
 
 
 def _save_job_meta(record: JobRecord) -> None:
