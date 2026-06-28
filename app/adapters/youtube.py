@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import logging
+from typing import IO
 
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
-from googleapiclient.http import MediaFileUpload
+from googleapiclient.http import MediaFileUpload, MediaIoBaseUpload
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +47,40 @@ class YouTubeUploader:
             },
         }
         media = MediaFileUpload(video_path, mimetype="video/mp4", resumable=True, chunksize=_CHUNK_SIZE)
+        insert_request = youtube.videos().insert(part="snippet,status", body=body, media_body=media)
+
+        response = None
+        while response is None:
+            status, response = insert_request.next_chunk()
+            if status:
+                logger.info("YouTube upload progress: %d%%", int(status.progress() * 100))
+
+        video_id = response["id"]
+        logger.info("YouTube upload complete video_id=%s", video_id)
+        return video_id
+
+    def upload_from_stream(
+        self,
+        file_obj: IO[bytes],
+        title: str,
+        description: str = "",
+        tags: list[str] | None = None,
+        privacy: str = "private",
+    ) -> str:
+        """GCSストリームを直接YouTubeにアップロードし、動画IDを返す。"""
+        youtube = build("youtube", "v3", credentials=self._credentials, cache_discovery=False)
+        body = {
+            "snippet": {
+                "title": title,
+                "description": description,
+                "tags": tags or [],
+                "categoryId": "10",
+            },
+            "status": {
+                "privacyStatus": privacy,
+            },
+        }
+        media = MediaIoBaseUpload(file_obj, mimetype="video/mp4", resumable=True, chunksize=_CHUNK_SIZE)
         insert_request = youtube.videos().insert(part="snippet,status", body=body, media_body=media)
 
         response = None

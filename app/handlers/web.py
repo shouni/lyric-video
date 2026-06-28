@@ -138,30 +138,37 @@ def publish_youtube(job_id: str):
     if not output_uri:
         abort(400)
 
+    title = request.form.get("youtube_title", "").strip()
+    if not title:
+        abort(400)
+
     yt_task = YouTubeTask(
         job_id=job_id,
         output_uri=output_uri,
-        title=request.form.get("youtube_title", "").strip(),
+        title=title,
         description=request.form.get("youtube_description", "").strip(),
         tags=request.form.get("youtube_tags", "").strip(),
         privacy=request.form.get("youtube_privacy", "private"),
     )
-
-    youtube_worker_url = cfg.service_url.rstrip("/") + "/tasks/youtube"
-    try:
-        queue.enqueue({"job_id": yt_task.job_id, "output_uri": yt_task.output_uri,
-                       "title": yt_task.title, "description": yt_task.description,
-                       "tags": yt_task.tags, "privacy": yt_task.privacy},
-                      worker_url=youtube_worker_url)
-    except Exception as exc:
-        logger.error("Failed to enqueue YouTube task job_id=%s: %s", job_id, exc)
-        abort(502)
 
     try:
         job["youtube_status"] = "queued"
         gcs.save_json(job, meta_uri)
     except Exception as exc:
         logger.warning("Failed to update meta for YouTube queue job_id=%s: %s", job_id, exc)
+
+    youtube_worker_url = cfg.service_url.rstrip("/") + "/tasks/youtube"
+    try:
+        queue.enqueue(asdict(yt_task), worker_url=youtube_worker_url)
+    except Exception as exc:
+        logger.error("Failed to enqueue YouTube task job_id=%s: %s", job_id, exc)
+        try:
+            job["youtube_status"] = "failed"
+            job["youtube_error"] = "Failed to enqueue task"
+            gcs.save_json(job, meta_uri)
+        except Exception:
+            pass
+        abort(502)
 
     return "", 204
 

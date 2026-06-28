@@ -4,6 +4,7 @@ import datetime
 import json
 import mimetypes
 import os
+from contextlib import contextmanager
 from functools import lru_cache
 
 import google.auth
@@ -63,6 +64,15 @@ def list_job_metadata(output_prefix: str) -> list[dict]:
 
     results = [r for r in raw if r is not None]
     return sorted(results, key=lambda x: x.get("created_at", ""), reverse=True)
+
+
+@contextmanager
+def open_blob(uri: str):
+    """GCS上のオブジェクトをシーク可能なストリームとして開く。"""
+    bucket_name, blob_name = _parse(uri)
+    blob = _get_client().bucket(bucket_name).blob(blob_name)
+    with blob.open("rb") as f:
+        yield f
 
 
 def delete(uri: str) -> None:

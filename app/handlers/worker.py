@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import logging
-import tempfile
-from pathlib import Path
 
 from flask import Blueprint, current_app, jsonify, request
 from google.auth.transport import requests as google_requests
@@ -88,13 +86,10 @@ def process_youtube():
 
     logger.info("Starting YouTube upload job_id=%s", yt_task.job_id)
     try:
-        with tempfile.TemporaryDirectory(prefix="yt_upload_") as work_dir:
-            video_path = str(Path(work_dir) / "output.mp4")
-            gcs.download(yt_task.output_uri, video_path)
-
-            tags = [t.strip() for t in yt_task.tags.split(",") if t.strip()]
-            video_id = uploader.upload(
-                video_path,
+        tags = [t.strip() for t in yt_task.tags.split(",") if t.strip()]
+        with gcs.open_blob(yt_task.output_uri) as f:
+            video_id = uploader.upload_from_stream(
+                f,
                 title=yt_task.title,
                 description=yt_task.description,
                 tags=tags,

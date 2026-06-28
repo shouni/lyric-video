@@ -28,6 +28,19 @@ Cloud Run (同一サービス / worker エンドポイント)
   ├─ Whisper でカラオケタイミング生成（ASS 未指定時）
   ├─ PIL で字幕を焼き込み MP4 生成
   └─ GCS へアップロード → meta.json 更新 → Slack 通知
+
+【オプション】YouTube 公開（動画確認後に手動トリガー）
+  │  ジョブ詳細画面の「YouTube に公開」フォームを送信
+  ▼
+Cloud Run (Flask)
+  │  meta.json のステータスを queued に更新 → キューに投入
+  ▼
+Cloud Tasks
+  │  POST /tasks/youtube を非同期呼び出し
+  ▼
+Cloud Run (同一サービス / worker エンドポイント)
+  └─ GCS からストリーム → YouTube Data API でアップロード
+     → meta.json に youtube_url 保存 → Slack 通知
 ```
 
 ---
@@ -52,19 +65,9 @@ Cloud Run (同一サービス / worker エンドポイント)
 | `WHISPER_MODEL` | ➖ | Whisper モデルサイズ（省略時: `large-v3`） |
 | `ALLOWED_EMAILS` | ➖ | アクセス許可メールアドレス（カンマ区切り）`ALLOWED_DOMAINS` との**どちらか必須** |
 | `ALLOWED_DOMAINS` | ➖ | アクセス許可ドメイン（カンマ区切り、例: `example.com`）`ALLOWED_EMAILS` との**どちらか必須** |
-
-### ローカル起動
-
-```sh
-pip install -r requirements.txt
-
-export SESSION_SECRET=any-random-string
-export GOOGLE_CLIENT_ID=...
-export GOOGLE_CLIENT_SECRET=...
-
-flask --app app.main run --port 8080
-# → http://localhost:8080
-```
+| `YOUTUBE_CLIENT_ID` | ➖ | YouTube Data API の OAuth2 クライアント ID |
+| `YOUTUBE_CLIENT_SECRET` | ➖ | YouTube Data API の OAuth2 クライアントシークレット |
+| `YOUTUBE_REFRESH_TOKEN` | ➖ | YouTube OAuth2 リフレッシュトークン（`scripts/get_youtube_token.py` で取得） |
 
 ### Cloud Run へのデプロイ
 
@@ -108,10 +111,12 @@ gcloud builds submit --config=cloudbuild.yaml
 | `GET` | `/jobs` | ジョブ履歴一覧（要ログイン） |
 | `GET` | `/jobs/<job_id>` | ジョブ詳細・動画プレーヤー（要ログイン） |
 | `DELETE` | `/jobs/<job_id>` | ジョブ削除・GCS ファイル削除（要ログイン） |
+| `POST` | `/jobs/<job_id>/youtube` | YouTube 公開タスクをキューに投入（要ログイン） |
 | `GET` | `/auth/login` | Google OAuth2 ログイン |
 | `GET` | `/auth/callback` | OAuth2 コールバック |
 | `GET` | `/auth/logout` | ログアウト |
-| `POST` | `/tasks/generate` | Cloud Tasks worker（OIDC 認証） |
+| `POST` | `/tasks/generate` | Cloud Tasks worker — 動画生成（OIDC 認証） |
+| `POST` | `/tasks/youtube` | Cloud Tasks worker — YouTube アップロード（OIDC 認証） |
 | `GET` | `/healthz` | ヘルスチェック |
 
 ---
@@ -173,6 +178,7 @@ Dialogue: 0,0:00:17.00,0:00:22.00,Karaoke,,0,0,0,,2行目の歌詞
 | [Authlib](https://docs.authlib.org/) | Google OAuth2 認証 |
 | [google-cloud-tasks](https://cloud.google.com/tasks) | 非同期タスクキュー |
 | [google-cloud-storage](https://cloud.google.com/storage) | GCS ファイル入出力 |
+| [google-api-python-client](https://github.com/googleapis/google-api-python-client) | YouTube Data API v3 |
 
 ---
 
