@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from urllib.parse import parse_qs, urlparse
 
 from flask import Blueprint, current_app, jsonify, request
 from google.auth.transport import requests as google_requests
@@ -88,7 +89,7 @@ def process_youtube():
         meta = gcs.load_json(meta_uri)
         if meta.get("youtube_status") == "complete" or meta.get("youtube_url"):
             youtube_url = meta.get("youtube_url", "")
-            video_id = youtube_url.rstrip("/").rsplit("/", 1)[-1] if youtube_url else ""
+            video_id = _extract_video_id(youtube_url)
             if video_id and uploader.video_exists(video_id):
                 logger.info("YouTube upload already completed job_id=%s", yt_task.job_id)
                 return jsonify({"status": "already_completed"}), 200
@@ -142,6 +143,17 @@ def process_youtube():
             logger.info("Dropping unrecoverable task job_id=%s status=%s", yt_task.job_id, exc.resp.status)
             return jsonify({"error": str(exc), "dropped": True}), 200
         return jsonify({"error": str(exc)}), 500
+
+
+def _extract_video_id(url: str) -> str:
+    if not url:
+        return ""
+    parsed = urlparse(url)
+    if parsed.netloc in ("www.youtube.com", "youtube.com") and parsed.path == "/watch":
+        return parse_qs(parsed.query).get("v", [""])[0]
+    if parsed.netloc == "youtu.be":
+        return parsed.path.lstrip("/")
+    return ""
 
 
 def _verify_oidc_token(authorization: str, audience: str, expected_email: str = "") -> bool:
