@@ -98,6 +98,8 @@ gcloud run services update lyric-video \
 
 > **注意:** トークン取得後は `http://localhost:8080/` をリダイレクト URI から削除することを推奨します。
 
+> 🔒 **セキュリティ推奨事項:** 本番環境では `YOUTUBE_REFRESH_TOKEN` や `GOOGLE_CLIENT_SECRET` などの機密情報を [Google Cloud Secret Manager](https://cloud.google.com/secret-manager) に保存し、Cloud Run からシークレットとして参照することを推奨します。
+
 ---
 
 ### Cloud Run へのデプロイ
@@ -126,6 +128,8 @@ gcloud builds submit --config=cloudbuild.yaml
 ```
 
 > **注意:** 環境変数は Cloud Run に直接設定します。`cloudbuild.yaml` はビルド・デプロイのみを行い、秘密情報は上書きしません。
+
+> 🔒 **セキュリティ推奨事項:** `GOOGLE_CLIENT_SECRET`・`SESSION_SECRET`・`YOUTUBE_REFRESH_TOKEN` などの機密情報は、本番環境では [Google Cloud Secret Manager](https://cloud.google.com/secret-manager) で管理することを推奨します。
 
 > **サービスアカウントの必要権限:**
 > - `roles/storage.objectAdmin`（GCS 読み書き）
