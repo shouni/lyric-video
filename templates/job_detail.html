@@ -91,7 +91,7 @@ https://zenn.dev/snknsk/articles/lyric-video-maker{% endset %}
               <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
               <div class="mb-3">
                 <label class="form-label fw-semibold">タイトル <span class="text-danger">*</span></label>
-                <input type="text" class="form-control" name="youtube_title" required maxlength="62"
+                <input type="text" class="form-control" name="youtube_title" required maxlength="{{ max_youtube_title_len }}"
                        placeholder="曲名（サフィックスは自動付与）">
                 <div class="form-text">「 | 【AI音楽 / リリックビデオ】Digital Armor Style」が自動で末尾に付きます</div>
               </div>
@@ -137,7 +137,7 @@ https://zenn.dev/snknsk/articles/lyric-video-maker{% endset %}
               <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
               <div class="mb-3">
                 <label class="form-label fw-semibold">タイトル <span class="text-danger">*</span></label>
-                <input type="text" class="form-control" name="youtube_title" required maxlength="62"
+                <input type="text" class="form-control" name="youtube_title" required maxlength="{{ max_youtube_title_len }}"
                        placeholder="曲名（サフィックスは自動付与）">
                 <div class="form-text">「 | 【AI音楽 / リリックビデオ】Digital Armor Style」が自動で末尾に付きます</div>
               </div>
