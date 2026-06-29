@@ -39,7 +39,9 @@ Cloud Tasks
   │  POST /tasks/youtube を非同期呼び出し
   ▼
 Cloud Run (同一サービス / worker エンドポイント)
+  ├─ YouTube API で動画の存在確認（削除済みなら meta をリセットして再アップロード）
   └─ GCS からストリーム → YouTube Data API でアップロード
+     → タイトルにサフィックス自動付与・固定タグ追加
      → meta.json に youtube_url 保存 → Slack 通知
 ```
 
@@ -65,7 +67,7 @@ Cloud Run (同一サービス / worker エンドポイント)
 | `WHISPER_MODEL` | ➖ | Whisper モデルサイズ（省略時: `large-v3`） |
 | `ALLOWED_EMAILS` | ➖ | アクセス許可メールアドレス（カンマ区切り）`ALLOWED_DOMAINS` との**どちらか必須** |
 | `ALLOWED_DOMAINS` | ➖ | アクセス許可ドメイン（カンマ区切り、例: `example.com`）`ALLOWED_EMAILS` との**どちらか必須** |
-| `YOUTUBE_REFRESH_TOKEN` | ➖ | YouTube OAuth2 リフレッシュトークン（`scripts/get_youtube_token.py` で取得）。`GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` を共用 |
+| `YOUTUBE_REFRESH_TOKEN` | ➖ | YouTube OAuth2 リフレッシュトークン（`scripts/get_youtube_token.py` で取得）。`GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` を共用。必要スコープ: `youtube.upload` / `youtube.readonly` / `youtube.force-ssl` |
 
 ### Cloud Run へのデプロイ
 

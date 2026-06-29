@@ -107,7 +107,11 @@ def process_youtube():
         for tag in reversed(_FIXED_TAGS):
             if tag not in tags:
                 tags.insert(0, tag)
-        title = yt_task.title if yt_task.title.endswith(_TITLE_SUFFIX) else yt_task.title + _TITLE_SUFFIX
+        if yt_task.title.endswith(_TITLE_SUFFIX):
+            title = yt_task.title
+        else:
+            max_base_len = 100 - len(_TITLE_SUFFIX)
+            title = yt_task.title[:max_base_len] + _TITLE_SUFFIX
         with gcs.open_blob(yt_task.output_uri) as f:
             video_id = uploader.upload_from_stream(
                 f,
