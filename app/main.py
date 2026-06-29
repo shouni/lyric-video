@@ -56,8 +56,8 @@ def create_app() -> Flask:
             logger.error("Failed to initialize Cloud Tasks queue: %s", exc)
 
     youtube_uploader = None
-    if cfg.youtube_client_id and cfg.youtube_client_secret and cfg.youtube_refresh_token:
-        youtube_uploader = YouTubeUploader(cfg.youtube_client_id, cfg.youtube_client_secret, cfg.youtube_refresh_token)
+    if cfg.google_client_id and cfg.google_client_secret and cfg.youtube_refresh_token:
+        youtube_uploader = YouTubeUploader(cfg.google_client_id, cfg.google_client_secret, cfg.youtube_refresh_token)
         logger.info("YouTube uploader initialized")
 
     app.config_obj = cfg

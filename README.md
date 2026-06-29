@@ -65,9 +65,7 @@ Cloud Run (同一サービス / worker エンドポイント)
 | `WHISPER_MODEL` | ➖ | Whisper モデルサイズ（省略時: `large-v3`） |
 | `ALLOWED_EMAILS` | ➖ | アクセス許可メールアドレス（カンマ区切り）`ALLOWED_DOMAINS` との**どちらか必須** |
 | `ALLOWED_DOMAINS` | ➖ | アクセス許可ドメイン（カンマ区切り、例: `example.com`）`ALLOWED_EMAILS` との**どちらか必須** |
-| `YOUTUBE_CLIENT_ID` | ➖ | YouTube Data API の OAuth2 クライアント ID |
-| `YOUTUBE_CLIENT_SECRET` | ➖ | YouTube Data API の OAuth2 クライアントシークレット |
-| `YOUTUBE_REFRESH_TOKEN` | ➖ | YouTube OAuth2 リフレッシュトークン（`scripts/get_youtube_token.py` で取得） |
+| `YOUTUBE_REFRESH_TOKEN` | ➖ | YouTube OAuth2 リフレッシュトークン（`scripts/get_youtube_token.py` で取得）。`GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` を共用 |
 
 ### Cloud Run へのデプロイ
 
