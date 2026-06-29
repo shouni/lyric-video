@@ -110,14 +110,24 @@ def process_youtube():
             title = yt_task.title
         else:
             title = yt_task.title[:MAX_YOUTUBE_TITLE_BASE_LENGTH] + TITLE_SUFFIX
+        _FIXED_HASHTAGS = "#AI音楽 #lyricvideo #lyria3"
+        description = yt_task.description.rstrip() + "\n\n" + _FIXED_HASHTAGS if yt_task.description else _FIXED_HASHTAGS
         with gcs.open_blob(yt_task.output_uri) as f:
             video_id = uploader.upload_from_stream(
                 f,
                 title=title,
-                description=yt_task.description,
+                description=description,
                 tags=tags,
                 privacy=yt_task.privacy,
             )
+
+        if yt_task.thumbnail_uri:
+            try:
+                mimetype = "image/png" if yt_task.thumbnail_uri.lower().endswith(".png") else "image/jpeg"
+                with gcs.open_blob(yt_task.thumbnail_uri) as img:
+                    uploader.set_thumbnail(video_id, img, mimetype=mimetype)
+            except Exception as exc:
+                logger.warning("Failed to set thumbnail job_id=%s: %s", yt_task.job_id, exc)
 
         youtube_url = f"https://youtu.be/{video_id}"
         _update_meta(meta_uri, {"youtube_status": "complete", "youtube_url": youtube_url})

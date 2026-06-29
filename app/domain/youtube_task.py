@@ -17,6 +17,7 @@ class YouTubeTask:
     description: str = ""
     tags: str = ""
     privacy: Literal["private", "unlisted", "public"] = "private"
+    thumbnail_uri: str = ""
 
     def to_json(self) -> str:
         return json.dumps(asdict(self))
