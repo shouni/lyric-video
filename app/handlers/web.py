@@ -174,6 +174,47 @@ def publish_youtube(job_id: str):
     return "", 204
 
 
+@web_bp.route("/jobs/<job_id>/youtube", methods=["DELETE"])
+def delete_youtube(job_id: str):
+    """YouTube動画を削除し、meta.jsonのYouTube関連情報をクリアする。"""
+    token = session.get("csrf_token")
+    header_token = request.headers.get("X-CSRF-Token", "")
+    if not token or token != header_token:
+        abort(403)
+
+    cfg = current_app.config_obj
+    uploader = current_app.youtube_uploader
+    if uploader is None:
+        abort(501)
+
+    output_prefix = cfg.default_output_prefix()
+    meta_uri = f"{output_prefix.rstrip('/')}/{job_id}/meta.json"
+    try:
+        meta = gcs.load_json(meta_uri)
+    except Exception:
+        abort(404)
+
+    youtube_url = meta.get("youtube_url", "")
+    video_id = youtube_url.rstrip("/").rsplit("/", 1)[-1] if youtube_url else ""
+    if not video_id:
+        abort(400)
+
+    try:
+        uploader.delete_video(video_id)
+    except Exception as exc:
+        logger.error("Failed to delete YouTube video job_id=%s: %s", job_id, exc)
+        return {"error": str(exc)}, 500
+
+    try:
+        meta["youtube_status"] = None
+        meta["youtube_url"] = None
+        gcs.save_json(meta, meta_uri)
+    except Exception as exc:
+        logger.warning("Failed to clear youtube meta job_id=%s: %s", job_id, exc)
+
+    return {"job_id": job_id, "deleted": video_id}, 200
+
+
 @web_bp.route("/jobs/<job_id>", methods=["DELETE"])
 def delete_job(job_id: str):
     """ジョブのmeta.jsonと出力ファイルをGCSから削除する。"""

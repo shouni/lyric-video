@@ -70,6 +70,12 @@ class YouTubeUploader:
         youtube.thumbnails().set(videoId=video_id, media_body=media).execute()
         logger.info("Thumbnail set video_id=%s", video_id)
 
+    def delete_video(self, video_id: str) -> None:
+        """YouTube動画を削除する。"""
+        youtube = build("youtube", "v3", credentials=self._credentials, cache_discovery=False)
+        youtube.videos().delete(id=video_id).execute()
+        logger.info("YouTube video deleted video_id=%s", video_id)
+
     def video_exists(self, video_id: str) -> bool:
         """動画IDがYouTube上に存在するか確認する。削除済みの場合はFalseを返す。"""
         youtube = build("youtube", "v3", credentials=self._credentials, cache_discovery=False)

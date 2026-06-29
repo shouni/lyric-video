@@ -75,10 +75,15 @@ https://zenn.dev/snknsk/articles/lyric-video-maker{% endset %}
             {{ job.youtube_url }}
           </a>
           {% if youtube_enabled %}
-          <button type="button" class="btn btn-sm btn-outline-secondary ms-auto"
-                  onclick="document.getElementById('reupload-section').classList.toggle('d-none')">
-            再アップロード
-          </button>
+          <div class="ms-auto d-flex gap-2">
+            <button type="button" class="btn btn-sm btn-outline-secondary"
+                    onclick="document.getElementById('reupload-section').classList.toggle('d-none')">
+              再アップロード
+            </button>
+            <button type="button" class="btn btn-sm btn-outline-danger" id="yt-delete-btn">
+              <i class="bi bi-trash"></i> YouTube から削除
+            </button>
+          </div>
           {% endif %}
         </div>
         {% if youtube_enabled %}
@@ -246,6 +251,26 @@ async function deleteJob(jobId, csrfToken) {
   } else {
     alert('削除に失敗しました: ' + resp.status);
   }
+}
+
+const ytDeleteBtn = document.getElementById('yt-delete-btn');
+if (ytDeleteBtn) {
+  ytDeleteBtn.addEventListener('click', async () => {
+    if (!confirm('YouTube の動画を削除しますか？\nこの操作は取り消せません。')) return;
+    ytDeleteBtn.disabled = true;
+    ytDeleteBtn.innerHTML = '<i class="bi bi-hourglass-split"></i> 削除中...';
+    const resp = await fetch('/jobs/{{ job.job_id }}/youtube', {
+      method: 'DELETE',
+      headers: { 'X-CSRF-Token': '{{ csrf_token }}' },
+    });
+    if (resp.ok) {
+      window.location.reload();
+    } else {
+      alert('削除に失敗しました: ' + resp.status);
+      ytDeleteBtn.disabled = false;
+      ytDeleteBtn.innerHTML = '<i class="bi bi-trash"></i> YouTube から削除';
+    }
+  });
 }
 
 const ytForm = document.getElementById('youtube-form');
