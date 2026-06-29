@@ -149,6 +149,7 @@ def publish_youtube(job_id: str):
         description=request.form.get("youtube_description", "").strip(),
         tags=request.form.get("youtube_tags", "").strip(),
         privacy=request.form.get("youtube_privacy", "private"),
+        thumbnail_uri=request.form.get("youtube_thumbnail_uri", "").strip(),
     )
 
     try:

@@ -100,6 +100,11 @@ https://zenn.dev/snknsk/articles/lyric-video-maker{% endset %}
                 <textarea class="form-control" name="youtube_description" rows="8">{{ default_yt_description }}</textarea>
               </div>
               <div class="mb-3">
+                <label class="form-label fw-semibold">サムネイル <span class="text-muted fw-normal">(GCS URI・省略可)</span></label>
+                <input type="text" class="form-control" name="youtube_thumbnail_uri" placeholder="gs://bucket/path/to/cover.jpg">
+                <div class="form-text">最大 2MB・16:9 推奨</div>
+              </div>
+              <div class="mb-3">
                 <label class="form-label fw-semibold">タグ <span class="text-muted fw-normal">(カンマ区切り・省略可)</span></label>
                 <input type="text" class="form-control" name="youtube_tags" placeholder="J-POP, カラオケ, 歌詞動画">
               </div>
@@ -144,6 +149,11 @@ https://zenn.dev/snknsk/articles/lyric-video-maker{% endset %}
               <div class="mb-3">
                 <label class="form-label fw-semibold">説明 <span class="text-muted fw-normal">(省略可)</span></label>
                 <textarea class="form-control" name="youtube_description" rows="8">{{ default_yt_description }}</textarea>
+              </div>
+              <div class="mb-3">
+                <label class="form-label fw-semibold">サムネイル <span class="text-muted fw-normal">(GCS URI・省略可)</span></label>
+                <input type="text" class="form-control" name="youtube_thumbnail_uri" placeholder="gs://bucket/path/to/cover.jpg">
+                <div class="form-text">最大 2MB・16:9 推奨</div>
               </div>
               <div class="mb-3">
                 <label class="form-label fw-semibold">タグ <span class="text-muted fw-normal">(カンマ区切り・省略可)</span></label>

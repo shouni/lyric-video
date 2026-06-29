@@ -63,6 +63,13 @@ class YouTubeUploader:
         logger.info("YouTube upload complete video_id=%s", video_id)
         return video_id
 
+    def set_thumbnail(self, video_id: str, image_obj: IO[bytes], mimetype: str = "image/jpeg") -> None:
+        """GCSストリームの画像をYouTube動画のサムネイルに設定する。"""
+        youtube = build("youtube", "v3", credentials=self._credentials, cache_discovery=False)
+        media = MediaIoBaseUpload(image_obj, mimetype=mimetype, resumable=False)
+        youtube.thumbnails().set(videoId=video_id, media_body=media).execute()
+        logger.info("Thumbnail set video_id=%s", video_id)
+
     def video_exists(self, video_id: str) -> bool:
         """動画IDがYouTube上に存在するか確認する。削除済みの場合はFalseを返す。"""
         youtube = build("youtube", "v3", credentials=self._credentials, cache_discovery=False)
