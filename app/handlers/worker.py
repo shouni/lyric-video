@@ -24,7 +24,7 @@ def process_task():
     pipeline = current_app.pipeline
 
     auth_header = request.headers.get("Authorization", "")
-    if not _verify_oidc_token(auth_header, cfg.task_audience_url):
+    if not _verify_oidc_token(auth_header, cfg.task_audience_url, cfg.service_account_email):
         return jsonify({"error": "Unauthorized"}), 401
 
     try:
@@ -68,7 +68,7 @@ def process_youtube():
     uploader = current_app.youtube_uploader
 
     auth_header = request.headers.get("Authorization", "")
-    if not _verify_oidc_token(auth_header, cfg.task_audience_url):
+    if not _verify_oidc_token(auth_header, cfg.task_audience_url, cfg.service_account_email):
         return jsonify({"error": "Unauthorized"}), 401
 
     if uploader is None:
@@ -120,8 +120,8 @@ def process_youtube():
         return jsonify({"error": str(exc)}), 500
 
 
-def _verify_oidc_token(authorization: str, audience: str) -> bool:
-    """AuthorizationヘッダーのOIDCトークンを指定audienceで検証する。"""
+def _verify_oidc_token(authorization: str, audience: str, expected_email: str = "") -> bool:
+    """AuthorizationヘッダーのOIDCトークンをaudienceとservice account emailで検証する。"""
     if not audience:
         logger.error("TASK_AUDIENCE_URL not configured — denying request to be safe")
         return False
@@ -129,7 +129,10 @@ def _verify_oidc_token(authorization: str, audience: str) -> bool:
         return False
     token = authorization[len("Bearer "):]
     try:
-        id_token.verify_oauth2_token(token, _GOOGLE_AUTH_REQUEST, audience)
+        id_info = id_token.verify_oauth2_token(token, _GOOGLE_AUTH_REQUEST, audience)
+        if expected_email and id_info.get("email") != expected_email:
+            logger.warning("OIDC email mismatch: expected=%s got=%s", expected_email, id_info.get("email"))
+            return False
         return True
     except Exception as exc:
         logger.warning("OIDC verification failed: %s", exc)
