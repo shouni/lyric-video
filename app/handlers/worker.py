@@ -129,7 +129,7 @@ def process_youtube():
             except Exception as exc:
                 logger.warning("Failed to set thumbnail job_id=%s: %s", yt_task.job_id, exc)
 
-        youtube_url = f"https://youtu.be/{video_id}"
+        youtube_url = f"https://www.youtube.com/watch?v={video_id}"
         _update_meta(meta_uri, {"youtube_status": "complete", "youtube_url": youtube_url})
         notifier.notify_complete(yt_task.job_id, yt_task.output_uri, youtube_url=youtube_url)
         logger.info("YouTube upload complete job_id=%s url=%s", yt_task.job_id, youtube_url)
