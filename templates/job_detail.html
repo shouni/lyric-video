@@ -74,6 +74,12 @@ https://zenn.dev/snknsk/articles/lyric-video-maker{% endset %}
           <a href="{{ job.youtube_url }}" target="_blank" rel="noopener" class="alert-link fw-semibold">
             {{ job.youtube_url }}
           </a>
+          {% set video_id = job.youtube_url.split('v=')[-1] if 'v=' in job.youtube_url else job.youtube_url.rstrip('/').rsplit('/', 1)[-1] %}
+          <button type="button" class="btn btn-sm btn-outline-secondary"
+                  onclick="navigator.clipboard.writeText('{{ video_id }}').then(() => { this.innerHTML='<i class=\'bi bi-check\'></i>'; setTimeout(() => this.innerHTML='<i class=\'bi bi-clipboard\'></i> ID', 1500); })"
+                  title="動画 ID をコピー">
+            <i class="bi bi-clipboard"></i> ID
+          </button>
           {% if youtube_enabled %}
           <div class="ms-auto d-flex gap-2">
             <button type="button" class="btn btn-sm btn-outline-secondary"
