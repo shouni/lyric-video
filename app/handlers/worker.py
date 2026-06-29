@@ -86,8 +86,13 @@ def process_youtube():
     try:
         meta = gcs.load_json(meta_uri)
         if meta.get("youtube_status") == "complete" or meta.get("youtube_url"):
-            logger.info("YouTube upload already completed job_id=%s", yt_task.job_id)
-            return jsonify({"status": "already_completed"}), 200
+            youtube_url = meta.get("youtube_url", "")
+            video_id = youtube_url.rstrip("/").rsplit("/", 1)[-1] if youtube_url else ""
+            if video_id and uploader.video_exists(video_id):
+                logger.info("YouTube upload already completed job_id=%s", yt_task.job_id)
+                return jsonify({"status": "already_completed"}), 200
+            logger.info("YouTube video deleted, re-uploading job_id=%s video_id=%s", yt_task.job_id, video_id)
+            _update_meta(meta_uri, {"youtube_status": None, "youtube_url": None})
     except Exception as exc:
         logger.warning("Failed to check meta job_id=%s: %s", yt_task.job_id, exc)
 

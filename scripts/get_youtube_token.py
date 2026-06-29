@@ -25,7 +25,11 @@ except ImportError:
     print("  pip install google-auth-oauthlib", file=sys.stderr)
     sys.exit(1)
 
-_SCOPES = ["https://www.googleapis.com/auth/youtube.upload"]
+_SCOPES = [
+    "https://www.googleapis.com/auth/youtube.upload",
+    "https://www.googleapis.com/auth/youtube.readonly",
+    "https://www.googleapis.com/auth/youtube.force-ssl",
+]
 
 
 def main() -> None:
