@@ -10,7 +10,11 @@ from googleapiclient.http import MediaFileUpload, MediaIoBaseUpload
 logger = logging.getLogger(__name__)
 
 _TOKEN_URI = "https://oauth2.googleapis.com/token"
-_SCOPES = ["https://www.googleapis.com/auth/youtube.upload"]
+_SCOPES = [
+    "https://www.googleapis.com/auth/youtube.upload",
+    "https://www.googleapis.com/auth/youtube.readonly",
+    "https://www.googleapis.com/auth/youtube.force-ssl",
+]
 _CHUNK_SIZE = 10 * 1024 * 1024  # 10 MB
 
 
@@ -58,6 +62,12 @@ class YouTubeUploader:
         video_id = response["id"]
         logger.info("YouTube upload complete video_id=%s", video_id)
         return video_id
+
+    def video_exists(self, video_id: str) -> bool:
+        """動画IDがYouTube上に存在するか確認する。削除済みの場合はFalseを返す。"""
+        youtube = build("youtube", "v3", credentials=self._credentials, cache_discovery=False)
+        response = youtube.videos().list(part="id", id=video_id).execute()
+        return bool(response.get("items"))
 
     def upload_from_stream(
         self,

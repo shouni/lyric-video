@@ -55,7 +55,48 @@
           <a href="{{ job.youtube_url }}" target="_blank" rel="noopener" class="alert-link fw-semibold">
             {{ job.youtube_url }}
           </a>
+          {% if youtube_enabled %}
+          <button type="button" class="btn btn-sm btn-outline-secondary ms-auto"
+                  onclick="document.getElementById('reupload-section').classList.toggle('d-none')">
+            再アップロード
+          </button>
+          {% endif %}
         </div>
+        {% if youtube_enabled %}
+        <div id="reupload-section" class="card border-secondary mt-2 d-none">
+          <div class="card-header bg-transparent fw-semibold">
+            <i class="bi bi-youtube me-1 text-danger"></i>YouTube に再アップロード
+          </div>
+          <div class="card-body">
+            <form method="post" action="/jobs/{{ job.job_id }}/youtube" id="youtube-form">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <div class="mb-3">
+                <label class="form-label fw-semibold">タイトル <span class="text-danger">*</span></label>
+                <input type="text" class="form-control" name="youtube_title" required maxlength="100">
+              </div>
+              <div class="mb-3">
+                <label class="form-label fw-semibold">説明 <span class="text-muted fw-normal">(省略可)</span></label>
+                <textarea class="form-control" name="youtube_description" rows="3"></textarea>
+              </div>
+              <div class="mb-3">
+                <label class="form-label fw-semibold">タグ <span class="text-muted fw-normal">(カンマ区切り・省略可)</span></label>
+                <input type="text" class="form-control" name="youtube_tags" placeholder="J-POP, カラオケ, 歌詞動画">
+              </div>
+              <div class="mb-3">
+                <label class="form-label fw-semibold">公開設定</label>
+                <select class="form-select" name="youtube_privacy">
+                  <option value="private" selected>非公開</option>
+                  <option value="unlisted">限定公開</option>
+                  <option value="public">公開</option>
+                </select>
+              </div>
+              <button type="submit" class="btn btn-danger">
+                <i class="bi bi-youtube me-1"></i>アップロード開始
+              </button>
+            </form>
+          </div>
+        </div>
+        {% endif %}
         {% elif youtube_enabled and s == 'complete' %}
         <div class="card border-secondary mt-3">
           <div class="card-header bg-transparent fw-semibold">
