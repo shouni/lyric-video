@@ -6,6 +6,7 @@ import threading
 from dataclasses import asdict
 
 from flask import Blueprint, abort, current_app, render_template, request, session
+from googleapiclient.errors import HttpError
 
 from app.adapters import gcs
 from app.domain.job import JobRecord
@@ -201,6 +202,12 @@ def delete_youtube(job_id: str):
 
     try:
         uploader.delete_video(video_id)
+    except HttpError as exc:
+        if exc.status_code == 404:
+            logger.info("YouTube video already deleted job_id=%s video_id=%s", job_id, video_id)
+        else:
+            logger.error("Failed to delete YouTube video job_id=%s: %s", job_id, exc)
+            return {"error": str(exc)}, 500
     except Exception as exc:
         logger.error("Failed to delete YouTube video job_id=%s: %s", job_id, exc)
         return {"error": str(exc)}, 500
