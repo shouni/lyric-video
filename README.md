@@ -7,7 +7,7 @@
 
 ## 🎯 概要
 
-**Lyric Video** は、MP3 からカラオケ字幕付き MP4 動画を生成する **オーケストレーター** です。GCS 上の音声・キーフレーム素材を受け取り、Whisper アライメント・字幕焼き込み・エンコードを Cloud Run 上で非同期実行します。
+**Lyric Video** は、MP3 からカラオケ字幕付き MP4 動画を生成し、YouTube へ自動投稿する **オーケストレーター** です。GCS 上の音声・キーフレーム素材を受け取り、Whisper アライメント・字幕焼き込み・エンコードを Cloud Run 上で非同期実行します。生成した動画はジョブ詳細画面から GCS を経由して YouTube へ直接ストリーミングアップロードでき、削除済み動画の再アップロードにも対応しています。
 
 ---
 
@@ -69,6 +69,39 @@ Cloud Run (同一サービス / worker エンドポイント)
 | `ALLOWED_DOMAINS` | ➖ | アクセス許可ドメイン（カンマ区切り、例: `example.com`）`ALLOWED_EMAILS` との**どちらか必須** |
 | `YOUTUBE_REFRESH_TOKEN` | ➖ | YouTube OAuth2 リフレッシュトークン（`scripts/get_youtube_token.py` で取得）。`GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` を共用。必要スコープ: `youtube.upload` / `youtube.readonly` / `youtube.force-ssl` |
 
+### YouTube リフレッシュトークンの取得
+
+YouTube への投稿機能を使うには、事前にリフレッシュトークンを取得して Cloud Run に設定する必要があります。
+
+**1. Google Cloud Console の設定**
+
+- **OAuth 同意画面** にスコープを追加: `youtube.upload` / `youtube.readonly` / `youtube.force-ssl`
+- **認証情報** の OAuth クライアント（ウェブ アプリケーション タイプ）に `http://localhost:8080/` をリダイレクト URI として追加
+
+**2. トークン取得**
+
+```sh
+export GOOGLE_CLIENT_ID=your-client-id
+export GOOGLE_CLIENT_SECRET=your-client-secret
+python3 scripts/get_youtube_token.py
+```
+
+ブラウザが開くので YouTube チャンネルのアカウントでログインして承認すると、`YOUTUBE_REFRESH_TOKEN` が出力されます。
+
+**3. Cloud Run に設定**
+
+```sh
+gcloud run services update lyric-video \
+  --region asia-northeast1 \
+  --set-env-vars "YOUTUBE_REFRESH_TOKEN=your-refresh-token"
+```
+
+> **注意:** トークン取得後は `http://localhost:8080/` をリダイレクト URI から削除することを推奨します。
+
+> 🔒 **セキュリティ推奨事項:** 本番環境では `YOUTUBE_REFRESH_TOKEN` や `GOOGLE_CLIENT_SECRET` などの機密情報を [Google Cloud Secret Manager](https://cloud.google.com/secret-manager) に保存し、Cloud Run からシークレットとして参照することを推奨します。
+
+---
+
 ### Cloud Run へのデプロイ
 
 ```sh
@@ -87,13 +120,16 @@ GOOGLE_CLIENT_ID=your-client-id,\
 GOOGLE_CLIENT_SECRET=your-client-secret,\
 SESSION_SECRET=$(python3 -c 'import secrets; print(secrets.token_hex(32))'),\
 SLACK_WEBHOOK_URL=https://hooks.slack.com/services/...,\
-ALLOWED_EMAILS=you@example.com"
+ALLOWED_EMAILS=you@example.com,\
+YOUTUBE_REFRESH_TOKEN=your-refresh-token"
 
 # 3. Cloud Build でビルド＆デプロイ
 gcloud builds submit --config=cloudbuild.yaml
 ```
 
 > **注意:** 環境変数は Cloud Run に直接設定します。`cloudbuild.yaml` はビルド・デプロイのみを行い、秘密情報は上書きしません。
+
+> 🔒 **セキュリティ推奨事項:** `GOOGLE_CLIENT_SECRET`・`SESSION_SECRET`・`YOUTUBE_REFRESH_TOKEN` などの機密情報は、本番環境では [Google Cloud Secret Manager](https://cloud.google.com/secret-manager) で管理することを推奨します。
 
 > **サービスアカウントの必要権限:**
 > - `roles/storage.objectAdmin`（GCS 読み書き）
