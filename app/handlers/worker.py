@@ -13,6 +13,8 @@ from app.domain.youtube_task import YouTubeTask
 logger = logging.getLogger(__name__)
 worker_bp = Blueprint("worker", __name__)
 
+_TITLE_SUFFIX = " | 【AI音楽 / リリックビデオ】Digital Armor Style"
+
 _GOOGLE_AUTH_REQUEST = google_requests.Request()
 
 
@@ -100,11 +102,16 @@ def process_youtube():
 
     logger.info("Starting YouTube upload job_id=%s", yt_task.job_id)
     try:
+        _FIXED_TAGS = ["lyric video", "lyria3", "AI音楽", "Digital Armor Style"]
         tags = [t.strip() for t in yt_task.tags.split(",") if t.strip()]
+        for tag in reversed(_FIXED_TAGS):
+            if tag not in tags:
+                tags.insert(0, tag)
+        title = yt_task.title if yt_task.title.endswith(_TITLE_SUFFIX) else yt_task.title + _TITLE_SUFFIX
         with gcs.open_blob(yt_task.output_uri) as f:
             video_id = uploader.upload_from_stream(
                 f,
-                title=yt_task.title,
+                title=title,
                 description=yt_task.description,
                 tags=tags,
                 privacy=yt_task.privacy,

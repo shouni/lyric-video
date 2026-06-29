@@ -49,6 +49,25 @@
             お使いのブラウザは動画再生に対応していません。
           </video>
         </div>
+        {% set default_yt_description %}動画をご視聴いただきありがとうございます！
+本動画は、最新のAI技術を活用して自動生成した楽曲の、動作・音質確認を目的としたテスト公開動画です。
+
+*【楽曲テーマ】*
+（ここに楽曲テーマを入力）
+
+*【出力仕様】*
+* 映像：H.264 / yuv420p
+* 音声：AAC 192kbps
+* コンテナ：MP4
+
+*【キャラクター】*
+・立ち絵：春日部つむぎ（VOICEVOX）
+
+🛠️ *Developer's Note*
+この動画の音声を生成するの全貌は、以下の記事で詳しく解説しています！
+https://zenn.dev/snknsk/articles/ai-music-orchestrator
+
+https://zenn.dev/snknsk/articles/lyric-video-maker{% endset %}
         {% if job.youtube_url %}
         <div class="alert alert-danger d-flex align-items-center gap-2 py-2 mt-3">
           <i class="bi bi-youtube fs-5"></i>
@@ -72,11 +91,13 @@
               <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
               <div class="mb-3">
                 <label class="form-label fw-semibold">タイトル <span class="text-danger">*</span></label>
-                <input type="text" class="form-control" name="youtube_title" required maxlength="100">
+                <input type="text" class="form-control" name="youtube_title" required maxlength="100"
+                       placeholder="曲名（サフィックスは自動付与）">
+                <div class="form-text">「 | 【AI音楽 / リリックビデオ】Digital Armor Style」が自動で末尾に付きます</div>
               </div>
               <div class="mb-3">
                 <label class="form-label fw-semibold">説明 <span class="text-muted fw-normal">(省略可)</span></label>
-                <textarea class="form-control" name="youtube_description" rows="3"></textarea>
+                <textarea class="form-control" name="youtube_description" rows="8">{{ default_yt_description }}</textarea>
               </div>
               <div class="mb-3">
                 <label class="form-label fw-semibold">タグ <span class="text-muted fw-normal">(カンマ区切り・省略可)</span></label>
@@ -116,11 +137,13 @@
               <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
               <div class="mb-3">
                 <label class="form-label fw-semibold">タイトル <span class="text-danger">*</span></label>
-                <input type="text" class="form-control" name="youtube_title" required maxlength="100">
+                <input type="text" class="form-control" name="youtube_title" required maxlength="100"
+                       placeholder="曲名（サフィックスは自動付与）">
+                <div class="form-text">「 | 【AI音楽 / リリックビデオ】Digital Armor Style」が自動で末尾に付きます</div>
               </div>
               <div class="mb-3">
                 <label class="form-label fw-semibold">説明 <span class="text-muted fw-normal">(省略可)</span></label>
-                <textarea class="form-control" name="youtube_description" rows="3"></textarea>
+                <textarea class="form-control" name="youtube_description" rows="8">{{ default_yt_description }}</textarea>
               </div>
               <div class="mb-3">
                 <label class="form-label fw-semibold">タグ <span class="text-muted fw-normal">(カンマ区切り・省略可)</span></label>
