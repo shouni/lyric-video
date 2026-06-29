@@ -10,7 +10,7 @@ from flask import Blueprint, abort, current_app, render_template, request, sessi
 from app.adapters import gcs
 from app.domain.job import JobRecord
 from app.domain.task import Task, new_job_id
-from app.domain.youtube_task import YouTubeTask
+from app.domain.youtube_task import MAX_YOUTUBE_TITLE_BASE_LENGTH, YouTubeTask
 
 logger = logging.getLogger(__name__)
 web_bp = Blueprint("web", __name__)
@@ -232,7 +232,8 @@ def job_detail(job_id: str):
 
     return render_template("job_detail.html", job=job, signed_url=signed_url, download_url=download_url,
                            csrf_token=session["csrf_token"],
-                           youtube_enabled=current_app.youtube_uploader is not None)
+                           youtube_enabled=current_app.youtube_uploader is not None,
+                           max_youtube_title_len=MAX_YOUTUBE_TITLE_BASE_LENGTH)
 
 
 def _save_job_meta(record: JobRecord) -> None:
