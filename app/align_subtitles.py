@@ -7,7 +7,6 @@ Usage:
 
 import re
 import sys
-import io
 import zipfile
 import argparse
 import stable_whisper
