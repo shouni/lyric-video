@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import logging
 from typing import IO
+from urllib.parse import parse_qs, urlparse
 
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
-from googleapiclient.http import MediaFileUpload, MediaIoBaseUpload
+from googleapiclient.http import MediaIoBaseUpload
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +19,18 @@ _SCOPES = [
 _CHUNK_SIZE = 10 * 1024 * 1024  # 10 MB
 
 
+def extract_video_id(url: str) -> str:
+    """youtu.be/ID と youtube.com/watch?v=ID の両形式から video_id を抽出する。"""
+    if not url:
+        return ""
+    parsed = urlparse(url)
+    if parsed.netloc in ("www.youtube.com", "youtube.com") and parsed.path == "/watch":
+        return parse_qs(parsed.query).get("v", [""])[0]
+    if parsed.netloc == "youtu.be":
+        return parsed.path.lstrip("/")
+    return ""
+
+
 class YouTubeUploader:
     def __init__(self, client_id: str, client_secret: str, refresh_token: str) -> None:
         self._credentials = Credentials(
@@ -28,40 +41,6 @@ class YouTubeUploader:
             client_secret=client_secret,
             scopes=_SCOPES,
         )
-
-    def upload(
-        self,
-        video_path: str,
-        title: str,
-        description: str = "",
-        tags: list[str] | None = None,
-        privacy: str = "private",
-    ) -> str:
-        """MP4ファイルをYouTubeにアップロードし、動画IDを返す。"""
-        youtube = build("youtube", "v3", credentials=self._credentials, cache_discovery=False)
-        body = {
-            "snippet": {
-                "title": title,
-                "description": description,
-                "tags": tags or [],
-                "categoryId": "10",  # Music
-            },
-            "status": {
-                "privacyStatus": privacy,
-            },
-        }
-        media = MediaFileUpload(video_path, mimetype="video/mp4", resumable=True, chunksize=_CHUNK_SIZE)
-        insert_request = youtube.videos().insert(part="snippet,status", body=body, media_body=media)
-
-        response = None
-        while response is None:
-            status, response = insert_request.next_chunk()
-            if status:
-                logger.info("YouTube upload progress: %d%%", int(status.progress() * 100))
-
-        video_id = response["id"]
-        logger.info("YouTube upload complete video_id=%s", video_id)
-        return video_id
 
     def set_thumbnail(self, video_id: str, image_obj: IO[bytes], mimetype: str = "image/jpeg") -> None:
         """GCSストリームの画像をYouTube動画のサムネイルに設定する。"""

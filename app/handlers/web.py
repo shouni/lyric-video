@@ -5,12 +5,11 @@ import secrets
 import threading
 from dataclasses import asdict
 
-from urllib.parse import parse_qs, urlparse
-
 from flask import Blueprint, abort, current_app, render_template, request, session
 from googleapiclient.errors import HttpError
 
 from app.adapters import gcs
+from app.adapters.youtube import extract_video_id
 from app.domain.job import JobRecord
 from app.domain.task import Task, new_job_id
 from app.domain.youtube_task import MAX_YOUTUBE_TITLE_BASE_LENGTH, YouTubeTask
@@ -198,7 +197,7 @@ def delete_youtube(job_id: str):
         abort(404)
 
     youtube_url = meta.get("youtube_url", "")
-    video_id = _extract_video_id(youtube_url)
+    video_id = extract_video_id(youtube_url)
     if not video_id:
         abort(400)
 
@@ -285,17 +284,6 @@ def job_detail(job_id: str):
                            csrf_token=session["csrf_token"],
                            youtube_enabled=current_app.youtube_uploader is not None,
                            max_youtube_title_len=MAX_YOUTUBE_TITLE_BASE_LENGTH)
-
-
-def _extract_video_id(youtube_url: str) -> str:
-    """youtu.be/ID と youtube.com/watch?v=ID の両形式から video_id を抽出する。"""
-    if not youtube_url:
-        return ""
-    parsed = urlparse(youtube_url)
-    if parsed.hostname in ("youtu.be",):
-        return parsed.path.lstrip("/")
-    qs = parse_qs(parsed.query)
-    return qs.get("v", [""])[0]
 
 
 def _save_job_meta(record: JobRecord) -> None:

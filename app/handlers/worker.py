@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import logging
-from urllib.parse import parse_qs, urlparse
 
 from flask import Blueprint, current_app, jsonify, request
 from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token
 
 from app.adapters import gcs
+from app.adapters.youtube import extract_video_id
 from app.domain.task import Task
 from app.domain.youtube_task import MAX_YOUTUBE_TITLE_BASE_LENGTH, TITLE_SUFFIX, YouTubeTask
 
@@ -16,6 +16,9 @@ worker_bp = Blueprint("worker", __name__)
 
 
 _GOOGLE_AUTH_REQUEST = google_requests.Request()
+
+_FIXED_TAGS = ["lyric video", "lyria3", "AI音楽", "Digital Armor Style"]
+_FIXED_HASHTAGS = "#AI音楽 #lyricvideo #lyria3"
 
 
 @worker_bp.route("/tasks/generate", methods=["POST"])
@@ -89,7 +92,7 @@ def process_youtube():
         meta = gcs.load_json(meta_uri)
         if meta.get("youtube_status") == "complete" or meta.get("youtube_url"):
             youtube_url = meta.get("youtube_url", "")
-            video_id = _extract_video_id(youtube_url)
+            video_id = extract_video_id(youtube_url)
             if video_id and uploader.video_exists(video_id):
                 logger.info("YouTube upload already completed job_id=%s", yt_task.job_id)
                 return jsonify({"status": "already_completed"}), 200
@@ -102,7 +105,6 @@ def process_youtube():
 
     logger.info("Starting YouTube upload job_id=%s", yt_task.job_id)
     try:
-        _FIXED_TAGS = ["lyric video", "lyria3", "AI音楽", "Digital Armor Style"]
         tags = [t.strip() for t in yt_task.tags.split(",") if t.strip()]
         for tag in reversed(_FIXED_TAGS):
             if tag not in tags:
@@ -111,7 +113,6 @@ def process_youtube():
             title = yt_task.title
         else:
             title = yt_task.title[:MAX_YOUTUBE_TITLE_BASE_LENGTH] + TITLE_SUFFIX
-        _FIXED_HASHTAGS = "#AI音楽 #lyricvideo #lyria3"
         description = yt_task.description.rstrip() + "\n\n" + _FIXED_HASHTAGS if yt_task.description else _FIXED_HASHTAGS
         with gcs.open_blob(yt_task.output_uri) as f:
             video_id = uploader.upload_from_stream(
@@ -143,17 +144,6 @@ def process_youtube():
             logger.info("Dropping unrecoverable task job_id=%s status=%s", yt_task.job_id, exc.resp.status)
             return jsonify({"error": str(exc), "dropped": True}), 200
         return jsonify({"error": str(exc)}), 500
-
-
-def _extract_video_id(url: str) -> str:
-    if not url:
-        return ""
-    parsed = urlparse(url)
-    if parsed.netloc in ("www.youtube.com", "youtube.com") and parsed.path == "/watch":
-        return parse_qs(parsed.query).get("v", [""])[0]
-    if parsed.netloc == "youtu.be":
-        return parsed.path.lstrip("/")
-    return ""
 
 
 def _verify_oidc_token(authorization: str, audience: str, expected_email: str = "") -> bool:
