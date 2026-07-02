@@ -49,22 +49,23 @@
             お使いのブラウザは動画再生に対応していません。
           </video>
         </div>
-        {% set default_yt_description %}*【楽曲テーマ】*
+        {% set default_yt_description %}🤖 AIが作詞・作曲からMVまで完全自動生成したオリジナル楽曲です。
+
+【楽曲テーマ】
 {{ job.theme or '（ここに楽曲テーマを入力）' }}
 
-*【出力仕様】*
-* 映像：H.264 / yuv420p
-* 音声：AAC 192kbps
-* コンテナ：MP4
+🎤 キャラクター
+・立ち絵・音声：春日部つむぎ（VOICEVOX）
 
-*【キャラクター】*
-・立ち絵：春日部つむぎ（VOICEVOX）
+🛠️ Developer's Note
+この動画の音声生成プロセスの全貌や、AIによる楽曲オーケストレーションの仕組みは、以下の記事で詳しく解説しています！
+🔗 https://zenn.dev/snknsk/articles/lyric-video-maker
+🔗 https://zenn.dev/snknsk/articles/ai-music-orchestrator
 
-🛠️ *Developer's Note*
-この動画の音声生成プロセスの全貌は、以下の記事で詳しく解説しています！
-https://zenn.dev/snknsk/articles/lyric-video-maker
-
-https://zenn.dev/snknsk/articles/ai-music-orchestrator{% endset %}
+⚙️ 出力仕様
+・映像：H.264 / yuv420p
+・音声：AAC 192kbps
+・コンテナ：MP4{% endset %}
         {% if job.youtube_url %}
         <div class="alert alert-danger d-flex align-items-center gap-2 py-2 mt-3">
           <i class="bi bi-youtube fs-5"></i>
