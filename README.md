@@ -9,6 +9,8 @@
 
 **Lyric Video** は、MP3 からカラオケ字幕付き MP4 動画を生成し、YouTube へ自動投稿する **オーケストレーター** です。GCS 上の音声・キーフレーム素材を受け取り、Whisper アライメント・字幕焼き込み・エンコードを Cloud Run 上で非同期実行します。生成した動画はジョブ詳細画面から GCS を経由して YouTube へ直接ストリーミングアップロードでき、削除済み動画の再アップロードにも対応しています。
 
+ブラウザ単体でも完結しますが、OIDC によるマシン間認証と JSON API レスポンスに対応しており、MCP (Model Context Protocol) ゲートウェイ経由で AI エージェントから動画生成・YouTube 公開を操作できるように設計されています。
+
 ---
 
 ## 🏗 アーキテクチャ
@@ -67,7 +69,7 @@ Cloud Run (同一サービス / worker エンドポイント)
 | `WHISPER_MODEL` | ➖ | Whisper モデルサイズ（省略時: `large-v3`） |
 | `ALLOWED_EMAILS` | ➖ | アクセス許可メールアドレス（カンマ区切り）`ALLOWED_DOMAINS` との**どちらか必須** |
 | `ALLOWED_DOMAINS` | ➖ | アクセス許可ドメイン（カンマ区切り、例: `example.com`）`ALLOWED_EMAILS` との**どちらか必須** |
-| `ALLOWED_M2M_SERVICE_ACCOUNTS` | ➖ | ユーザー向けエンドポイントを OIDC Bearer トークン（`Authorization: Bearer <ID Token>`, audience=`SERVICE_URL`）で呼び出せるサービスアカウントのメールアドレス一覧（カンマ区切り）。[ap-mcp](https://github.com/shouni/ap-mcp) など他サービスからのマシン間呼び出し向け。未設定の場合、M2M呼び出しは常に拒否されます |
+| `ALLOWED_M2M_SERVICE_ACCOUNTS` | ➖ | ユーザー向けエンドポイントを OIDC Bearer トークン（`Authorization: Bearer <ID Token>`, audience=`SERVICE_URL`）で呼び出せるサービスアカウントのメールアドレス一覧（カンマ区切り）。MCP ゲートウェイなど他サービスからのマシン間呼び出し向け。未設定の場合、M2M呼び出しは常に拒否されます |
 | `YOUTUBE_REFRESH_TOKEN` | ➖ | YouTube OAuth2 リフレッシュトークン（`scripts/get_youtube_token.py` で取得）。`GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` を共用。必要スコープ: `youtube.upload` / `youtube.readonly` / `youtube.force-ssl` |
 
 ### YouTube リフレッシュトークンの取得
@@ -156,7 +158,7 @@ gcloud builds submit --config=cloudbuild.yaml
 | `POST` | `/tasks/youtube` | Cloud Tasks worker — YouTube アップロード（OIDC 認証） |
 | `GET` | `/healthz` | ヘルスチェック |
 
-「要ログイン」のエンドポイントは、ブラウザセッション（Cookie + CSRF）に加えて、`ALLOWED_M2M_SERVICE_ACCOUNTS` に登録済みのサービスアカウントが発行した OIDC Bearer トークン（`Authorization: Bearer <ID Token>`, audience=`SERVICE_URL`）でも認証できます。M2M 認証済みリクエストは CSRF 検証をバイパスします。`POST /new`・`GET /jobs`・`GET /jobs/<job_id>`・`POST /jobs/<job_id>/youtube` は、`Accept: application/json` を付けると HTML の代わりに JSON を返します（[ap-mcp](https://github.com/shouni/ap-mcp) など他サービスからのマシン間呼び出し向け）。
+「要ログイン」のエンドポイントは、ブラウザセッション（Cookie + CSRF）に加えて、`ALLOWED_M2M_SERVICE_ACCOUNTS` に登録済みのサービスアカウントが発行した OIDC Bearer トークン（`Authorization: Bearer <ID Token>`, audience=`SERVICE_URL`）でも認証できます。M2M 認証済みリクエストは CSRF 検証をバイパスします。`POST /new`・`GET /jobs`・`GET /jobs/<job_id>`・`POST /jobs/<job_id>/youtube` は、`Accept: application/json` を付けると HTML の代わりに JSON を返します（MCP ゲートウェイなど他サービスからのマシン間呼び出し向け）。
 
 ---
 

@@ -49,5 +49,5 @@ gcloud builds submit --config=cloudbuild.yaml
 - 関数・メソッドには「何を」ではなく設計判断の理由が要る場合のみ日本語のdocstring/コメントを付ける（既存コードの慣習に合わせる）。
 - 秘密情報（`SESSION_SECRET`, `GOOGLE_CLIENT_SECRET`, `YOUTUBE_REFRESH_TOKEN` 等）は環境変数経由。本番はSecret Manager推奨（コード内にハードコードしない）。
 - `app/handlers/worker.py` の `/tasks/*` エンドポイントはOIDC検証で保護されたCloud Tasks専用。ユーザー向けエンドポイントと混同しない。
-- ユーザー向けエンドポイント（`/new`, `/jobs`, ...）は、ブラウザセッションに加えて `ALLOWED_M2M_SERVICE_ACCOUNTS` 経由のOIDC M2M認証（`app/adapters/m2m.py`）も受け付ける。M2M認証済みリクエストはCSRF検証をバイパスし、`Accept: application/json` を付けるとJSONを返す（[ap-mcp](https://github.com/shouni/ap-mcp) からの呼び出し用）。ap-comp の `/web/*` パターンと同じ設計。
+- ユーザー向けエンドポイント（`/new`, `/jobs`, ...）は、ブラウザセッションに加えて `ALLOWED_M2M_SERVICE_ACCOUNTS` 経由のOIDC M2M認証（`app/adapters/m2m.py`）も受け付ける。M2M認証済みリクエストはCSRF検証をバイパスし、`Accept: application/json` を付けるとJSONを返す（MCPゲートウェイからの呼び出し用）。ap-comp の `/web/*` パターンと同じ設計。
 - GCS入出力パスやWhisperモデル等のデフォルト値は `app/config.py` の `Config.from_env` に集約されている。
