@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 
+from google.auth import exceptions as google_auth_exceptions
 from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token as google_id_token
 
@@ -21,8 +22,10 @@ def verify_m2m_token(authorization_header: str, audience: str, allowed_service_a
 
     token = authorization_header[len("Bearer "):]
     try:
+        # verify_oauth2_token は無効なトークンに ValueError、発行者不一致や証明書取得の
+        # 通信エラーに google.auth.exceptions.GoogleAuthError を送出する（公式docstring参照）。
         claims = google_id_token.verify_oauth2_token(token, _request, audience)
-    except Exception as exc:
+    except (ValueError, google_auth_exceptions.GoogleAuthError) as exc:
         logger.info("M2M OIDC token verification failed: %s", exc)
         return None
 

@@ -37,6 +37,13 @@ def _require_csrf(token: str) -> None:
         abort(403)
 
 
+def _fail(status: int, message: str):
+    """JSON呼び出し元にはJSONエラーを返し、それ以外は従来通りHTMLエラーページへabortする。"""
+    if _wants_json():
+        return {"status": "error", "error": message}, status
+    abort(status)
+
+
 @web_bp.route("/", methods=["GET"])
 def home():
     """ホームダッシュボードを表示し、最新ジョブ5件を一覧する。"""
@@ -150,24 +157,24 @@ def publish_youtube(job_id: str):
     uploader = current_app.youtube_uploader
 
     if uploader is None:
-        abort(501)
+        return _fail(501, "YouTube integration is not configured")
     if queue is None:
-        abort(501)
+        return _fail(501, "Cloud Tasks queue is not configured")
 
     output_prefix = cfg.default_output_prefix()
     meta_uri = f"{output_prefix.rstrip('/')}/{job_id}/meta.json"
     try:
         job = gcs.load_json(meta_uri)
     except Exception:
-        abort(404)
+        return _fail(404, "Job not found")
 
     output_uri = job.get("output_uri", "")
     if not output_uri:
-        abort(400)
+        return _fail(400, "Job output is not ready yet")
 
     title = request.form.get("youtube_title", "").strip()
     if not title:
-        abort(400)
+        return _fail(400, "youtube_title is required")
 
     yt_task = YouTubeTask(
         job_id=job_id,
@@ -196,7 +203,7 @@ def publish_youtube(job_id: str):
             gcs.save_json(job, meta_uri)
         except Exception:
             pass
-        abort(502)
+        return _fail(502, f"Failed to enqueue YouTube task: {exc}")
 
     if _wants_json():
         return {"status": "queued", "job_id": job_id}, 202
@@ -290,7 +297,7 @@ def job_detail(job_id: str):
             job["job_id"] = job_id
     except Exception as exc:
         logger.error("Failed to load job %s: %s", job_id, exc)
-        abort(404)
+        return _fail(404, "Job not found")
 
     signed_url = None
     download_url = None
