@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import logging
+from io import BytesIO
 
 from flask import Blueprint, current_app, jsonify, request
 from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token
+from PIL import Image
 
 from app.adapters import gcs
 from app.adapters.youtube import extract_video_id
@@ -19,6 +21,27 @@ _GOOGLE_AUTH_REQUEST = google_requests.Request()
 
 _FIXED_TAGS = ["lyric video", "lyria3", "AI音楽", "Digital Armor Style"]
 _FIXED_HASHTAGS = "#AI音楽 #lyricvideo #lyria3"
+
+# YouTube Data API の thumbnails.set はメディアサイズ上限が 2MB。
+# カバーアートは高解像度PNGで出力されるため、そのままだと超過することがある。
+_YOUTUBE_THUMBNAIL_MAX_BYTES = 2 * 1024 * 1024
+
+
+def _prepare_thumbnail(image_bytes: bytes) -> BytesIO:
+    """YouTubeサムネイルの上限(2MB)に収まるようJPEGへ再エンコードする。
+
+    PNGはロスレスで容量が大きくなりがちなため、画質を段階的に落としながら
+    JPEG再エンコードして上限内に収める。
+    """
+    img = Image.open(BytesIO(image_bytes)).convert("RGB")
+    buf = BytesIO()
+    for quality in (90, 80, 70, 60, 50, 40):
+        buf = BytesIO()
+        img.save(buf, format="JPEG", quality=quality)
+        if buf.tell() <= _YOUTUBE_THUMBNAIL_MAX_BYTES:
+            break
+    buf.seek(0)
+    return buf
 
 
 @worker_bp.route("/tasks/generate", methods=["POST"])
@@ -125,9 +148,9 @@ def process_youtube():
 
         if yt_task.thumbnail_uri:
             try:
-                mimetype = "image/png" if yt_task.thumbnail_uri.lower().endswith(".png") else "image/jpeg"
                 with gcs.open_blob(yt_task.thumbnail_uri) as img:
-                    uploader.set_thumbnail(video_id, img, mimetype=mimetype)
+                    thumbnail = _prepare_thumbnail(img.read())
+                uploader.set_thumbnail(video_id, thumbnail, mimetype="image/jpeg")
             except Exception as exc:
                 logger.warning("Failed to set thumbnail job_id=%s: %s", yt_task.job_id, exc)
 
