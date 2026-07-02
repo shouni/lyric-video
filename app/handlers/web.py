@@ -5,7 +5,7 @@ import secrets
 import threading
 from dataclasses import asdict
 
-from flask import Blueprint, abort, current_app, render_template, request, session
+from flask import Blueprint, abort, current_app, g, render_template, request, session
 from googleapiclient.errors import HttpError
 
 from app.adapters import gcs
@@ -16,6 +16,32 @@ from app.domain.youtube_task import MAX_YOUTUBE_TITLE_BASE_LENGTH, YouTubeTask
 
 logger = logging.getLogger(__name__)
 web_bp = Blueprint("web", __name__)
+
+
+def _wants_json() -> bool:
+    """呼び出し元が`Accept: application/json`でJSONレスポンスを要求しているか判定する。"""
+    return "application/json" in request.headers.get("Accept", "")
+
+
+def _is_m2m() -> bool:
+    """M2M(サーバー間通信)のOIDC認証済みリクエストかどうかを返す。"""
+    return g.get("m2m_email") is not None
+
+
+def _require_csrf(token: str) -> None:
+    """M2Mリクエスト以外は、セッションに保存されたCSRFトークンとの一致を要求する。"""
+    if _is_m2m():
+        return
+    expected = session.get("csrf_token")
+    if not expected or expected != token:
+        abort(403)
+
+
+def _fail(status: int, message: str):
+    """JSON呼び出し元にはJSONエラーを返し、それ以外は従来通りHTMLエラーページへabortする。"""
+    if _wants_json():
+        return {"status": "error", "error": message}, status
+    abort(status)
 
 
 @web_bp.route("/", methods=["GET"])
@@ -47,9 +73,7 @@ def get_form():
 @web_bp.route("/new", methods=["POST"])
 def post_form():
     """フォーム送信を受け取り、入力値を検証してCloud Tasksへジョブを登録する。"""
-    token = session.get("csrf_token")
-    if not token or token != request.form.get("csrf_token"):
-        abort(403)
+    _require_csrf(request.form.get("csrf_token", ""))
 
     cfg = current_app.config_obj
     queue = current_app.queue
@@ -66,6 +90,8 @@ def post_form():
     )
 
     def render_error(error: str, status: int):
+        if _wants_json():
+            return {"status": "error", "error": error}, status
         return render_template(
             "new.html",
             error=error,
@@ -93,6 +119,8 @@ def post_form():
 
     threading.Thread(target=_save_job_meta, args=(JobRecord.from_task(task),), daemon=True).start()
 
+    if _wants_json():
+        return {"status": "queued", "job_id": job_id}, 202
     return render_template("queued.html", job_id=job_id), 202
 
 
@@ -110,39 +138,43 @@ def job_list():
         except Exception as exc:
             logger.error("Failed to list jobs: %s", exc)
             error = "履歴の取得に失敗しました。"
+
+    if _wants_json():
+        if error:
+            return {"status": "error", "error": error}, 502
+        return {"jobs": jobs}, 200
+
     return render_template("jobs.html", jobs=jobs, error=error)
 
 
 @web_bp.route("/jobs/<job_id>/youtube", methods=["POST"])
 def publish_youtube(job_id: str):
     """完了済みジョブの動画をYouTubeへアップロードするタスクをキューに追加する。"""
-    token = session.get("csrf_token")
-    if not token or token != request.form.get("csrf_token"):
-        abort(403)
+    _require_csrf(request.form.get("csrf_token", ""))
 
     cfg = current_app.config_obj
     queue = current_app.queue
     uploader = current_app.youtube_uploader
 
     if uploader is None:
-        abort(501)
+        return _fail(501, "YouTube integration is not configured")
     if queue is None:
-        abort(501)
+        return _fail(501, "Cloud Tasks queue is not configured")
 
     output_prefix = cfg.default_output_prefix()
     meta_uri = f"{output_prefix.rstrip('/')}/{job_id}/meta.json"
     try:
         job = gcs.load_json(meta_uri)
     except Exception:
-        abort(404)
+        return _fail(404, "Job not found")
 
     output_uri = job.get("output_uri", "")
     if not output_uri:
-        abort(400)
+        return _fail(400, "Job output is not ready yet")
 
     title = request.form.get("youtube_title", "").strip()
     if not title:
-        abort(400)
+        return _fail(400, "youtube_title is required")
 
     yt_task = YouTubeTask(
         job_id=job_id,
@@ -171,18 +203,17 @@ def publish_youtube(job_id: str):
             gcs.save_json(job, meta_uri)
         except Exception:
             pass
-        abort(502)
+        return _fail(502, f"Failed to enqueue YouTube task: {exc}")
 
+    if _wants_json():
+        return {"status": "queued", "job_id": job_id}, 202
     return "", 204
 
 
 @web_bp.route("/jobs/<job_id>/youtube", methods=["DELETE"])
 def delete_youtube(job_id: str):
     """YouTube動画を削除し、meta.jsonのYouTube関連情報をクリアする。"""
-    token = session.get("csrf_token")
-    header_token = request.headers.get("X-CSRF-Token", "")
-    if not token or token != header_token:
-        abort(403)
+    _require_csrf(request.headers.get("X-CSRF-Token", ""))
 
     cfg = current_app.config_obj
     uploader = current_app.youtube_uploader
@@ -226,10 +257,7 @@ def delete_youtube(job_id: str):
 @web_bp.route("/jobs/<job_id>", methods=["DELETE"])
 def delete_job(job_id: str):
     """ジョブのmeta.jsonと出力ファイルをGCSから削除する。"""
-    token = session.get("csrf_token")
-    header_token = request.headers.get("X-CSRF-Token", "")
-    if not token or token != header_token:
-        abort(403)
+    _require_csrf(request.headers.get("X-CSRF-Token", ""))
 
     cfg = current_app.config_obj
     output_prefix = cfg.default_output_prefix()
@@ -256,7 +284,7 @@ def delete_job(job_id: str):
 @web_bp.route("/jobs/<job_id>")
 def job_detail(job_id: str):
     """ジョブ詳細・動画プレーヤーを表示する。"""
-    if "csrf_token" not in session:
+    if not _is_m2m() and "csrf_token" not in session:
         session["csrf_token"] = secrets.token_hex(16)
 
     cfg = current_app.config_obj
@@ -269,7 +297,7 @@ def job_detail(job_id: str):
             job["job_id"] = job_id
     except Exception as exc:
         logger.error("Failed to load job %s: %s", job_id, exc)
-        abort(404)
+        return _fail(404, "Job not found")
 
     signed_url = None
     download_url = None
@@ -279,6 +307,14 @@ def job_detail(job_id: str):
             download_url = gcs.generate_signed_url(job["output_uri"], cfg.service_account_email, filename="output.mp4")
         except Exception as exc:
             logger.error("Failed to generate signed URL job_id=%s: %s", job_id, exc)
+
+    if _wants_json():
+        return {
+            **job,
+            "video_url": signed_url,
+            "download_url": download_url,
+            "youtube_enabled": current_app.youtube_uploader is not None,
+        }, 200
 
     return render_template("job_detail.html", job=job, signed_url=signed_url, download_url=download_url,
                            csrf_token=session["csrf_token"],
