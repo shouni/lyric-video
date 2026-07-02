@@ -3,11 +3,12 @@ from __future__ import annotations
 import logging
 import sys
 
-from flask import Flask, redirect, request, session, url_for
+from flask import Flask, g, redirect, request, url_for
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from app.auth import auth_bp, get_user_email, init_oauth
 from app.config import Config
+from app.adapters.m2m import verify_m2m_token
 from app.adapters.slack import SlackNotifier
 from app.adapters.task_queue import CloudTasksQueue
 from app.adapters.youtube import YouTubeUploader
@@ -72,8 +73,14 @@ def create_app() -> Flask:
 
     @app.before_request
     def check_auth():
-        """公開パス以外へのアクセスにログイン済みセッションを要求する。"""
+        """公開パス以外へのアクセスに、ログイン済みセッションまたはM2M OIDCトークンを要求する。"""
         if request.path in _PUBLIC_PATHS:
+            return None
+        m2m_email = verify_m2m_token(
+            request.headers.get("Authorization", ""), cfg.service_url, cfg.allowed_m2m_service_accounts
+        )
+        if m2m_email:
+            g.m2m_email = m2m_email
             return None
         if not get_user_email():
             return redirect(url_for("auth.login"), 303)

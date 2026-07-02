@@ -26,6 +26,8 @@ class Config:
     youtube_refresh_token: str
     allowed_emails: list[str] = field(default_factory=list)
     allowed_domains: list[str] = field(default_factory=list)
+    # M2M (サーバー間通信) 用OIDC許可リスト
+    allowed_m2m_service_accounts: list[str] = field(default_factory=list)
 
     def is_secure_url(self) -> bool:
         """サービスURLがHTTPSかどうかを返す。"""
@@ -62,6 +64,7 @@ class Config:
             youtube_refresh_token=os.getenv("YOUTUBE_REFRESH_TOKEN", ""),
             allowed_emails=_split_env("ALLOWED_EMAILS"),
             allowed_domains=_split_env("ALLOWED_DOMAINS"),
+            allowed_m2m_service_accounts=_split_env("ALLOWED_M2M_SERVICE_ACCOUNTS"),
         )
 
 
