@@ -23,8 +23,10 @@ RUN python3 -c "import os, whisper; whisper._download(whisper._MODELS['${WHISPER
 # Copy application code after model download so code-only changes do not invalidate the model cache layer.
 COPY . .
 
-# Non-root user (PoLP); chown after model download so cache is accessible
-RUN useradd -r -u 1001 appuser && chown -R appuser /app
+# Non-root user (PoLP); -m creates /home/appuser so libraries that write to $HOME
+# (e.g. torch/huggingface cache fallback, Cloud Run gen2 control socket) don't fail
+# with "Permission denied: '/home/appuser'" on every boot.
+RUN useradd -r -m -u 1001 appuser && chown -R appuser /app
 USER appuser
 
 ENV PORT=8080
