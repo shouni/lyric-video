@@ -27,6 +27,22 @@ _FIXED_HASHTAGS = "#AI音楽 #lyricvideo #lyria3"
 _YOUTUBE_THUMBNAIL_MAX_BYTES = 2 * 1024 * 1024
 
 
+def _fetch_recipe(audio_url: str) -> dict:
+    """audio_urlと同じベース名のレシピJSON(例: foo.mp3 -> foo.json)を取得する。
+
+    レシピが存在しない・壊れている場合は空dictを返す（YouTube投稿フォームの
+    タイトル・説明欄のデフォルト値を埋めるための補助情報であり、動画生成の
+    成否には影響しないため）。
+    """
+    if not audio_url.lower().endswith(".mp3"):
+        return {}
+    recipe_uri = audio_url[: -len(".mp3")] + ".json"
+    try:
+        return gcs.load_json(recipe_uri)
+    except Exception:
+        return {}
+
+
 def _prepare_thumbnail(image_bytes: bytes) -> BytesIO:
     """YouTubeサムネイルの上限(2MB)に収まるようJPEGへ再エンコードする。
 
@@ -62,6 +78,7 @@ def process_task():
         logger.error("Invalid task payload: %s", exc)
         return jsonify({"error": str(exc)}), 400
 
+    recipe = _fetch_recipe(task.audio_url)
     meta_uri = f"{task.output_prefix.rstrip('/')}/{task.job_id}/meta.json" if task.output_prefix else None
     _update_meta(meta_uri, {
         "status": "running",
@@ -72,6 +89,8 @@ def process_task():
         "whisper_model": task.whisper_model,
         "output_prefix": task.output_prefix,
         "created_at": task.created_at,
+        "theme": recipe.get("theme", ""),
+        "title": recipe.get("title", ""),
     })
 
     logger.info("Processing task job_id=%s", task.job_id)
