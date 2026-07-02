@@ -1,0 +1,54 @@
+# Git
+.git
+.gitignore
+
+# Python
+.venv
+venv
+env
+__pycache__/
+*.pyc
+*.pyd
+*.egg-info/
+.eggs/
+.pytest_cache/
+.coverage
+.tox/
+
+# IDE / OS
+.idea
+.vscode
+.DS_Store
+*.iml
+
+# Claude Code
+.claude
+
+# Docs
+README.md
+LICENSE
+
+# Local dev artifacts
+.env
+.flaskenv
+*.log
+/logs/
+/var/tmp/
+.cache/
+
+# Input/output data (mounted or generated at runtime, not needed in image)
+/input/
+/output/
+frames_tmp*/
+
+# Generated media (should never be baked into the image)
+*.mp3
+*.wav
+*.m4a
+*.mp4
+*.mov
+*.zip
+*.ass
+
+# CI/CD config (not needed inside the container)
+cloudbuild.yaml
