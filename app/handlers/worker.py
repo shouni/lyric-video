@@ -91,6 +91,7 @@ def process_task():
         "created_at": task.created_at,
         "theme": recipe.get("theme", ""),
         "title": recipe.get("title", ""),
+        "hook": (recipe.get("lyrics") or {}).get("hook", ""),
     })
 
     logger.info("Processing task job_id=%s", task.job_id)

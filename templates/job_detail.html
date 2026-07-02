@@ -53,7 +53,9 @@
 
 【楽曲テーマ】
 {{ job.theme or '（ここに楽曲テーマを入力）' }}
-
+{% if job.hook %}
+🎵 「{{ job.hook }}」
+{% endif %}
 🎤 キャラクター
 ・立ち絵・音声：春日部つむぎ（VOICEVOX）
 
