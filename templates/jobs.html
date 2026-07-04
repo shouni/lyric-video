@@ -19,7 +19,12 @@
   <a href="/jobs/{{ job.job_id }}" class="list-group-item list-group-item-action p-3">
     <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-2">
       <div class="flex-grow-1 me-md-3">
+        {% if job.title %}
+        <div class="fw-bold text-truncate mb-1">{{ job.title }}</div>
+        <div class="text-muted small font-monospace text-truncate mb-1">{{ job.job_id }}</div>
+        {% else %}
         <div class="fw-bold font-monospace text-truncate mb-1">{{ job.job_id }}</div>
+        {% endif %}
         <div class="text-muted small">
           {% if job.created_at %}
           <i class="bi bi-calendar3 me-1"></i>{{ job.created_at[:19].replace('T', ' ') }}
