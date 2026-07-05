@@ -47,6 +47,9 @@ jobs:
         run: python -m compileall app scripts
 
       - name: Import sanity check
+        env:
+          # create_app() は起動時に SESSION_SECRET を必須で要求するため、CIでのimport確認用にダミー値を渡す
+          SESSION_SECRET: "ci-dummy-session-secret"
         run: python -c "import app.main"
 
   vulncheck:
