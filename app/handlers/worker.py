@@ -80,19 +80,22 @@ def process_task():
 
     recipe = _fetch_recipe(task.audio_url)
     meta_uri = f"{task.output_prefix.rstrip('/')}/{task.job_id}/meta.json" if task.output_prefix else None
-    _update_meta(meta_uri, {
-        "status": "running",
-        "job_id": task.job_id,
-        "audio_url": task.audio_url,
-        "keyframes_url": task.keyframes_url,
-        "subs_url": task.subs_url,
-        "whisper_model": task.whisper_model,
-        "output_prefix": task.output_prefix,
-        "created_at": task.created_at,
-        "theme": recipe.get("theme", ""),
-        "title": recipe.get("title", ""),
-        "hook": (recipe.get("lyrics") or {}).get("hook", ""),
-    })
+    _update_meta(
+        meta_uri,
+        {
+            "status": "running",
+            "job_id": task.job_id,
+            "audio_url": task.audio_url,
+            "keyframes_url": task.keyframes_url,
+            "subs_url": task.subs_url,
+            "whisper_model": task.whisper_model,
+            "output_prefix": task.output_prefix,
+            "created_at": task.created_at,
+            "theme": recipe.get("theme", ""),
+            "title": recipe.get("title", ""),
+            "hook": (recipe.get("lyrics") or {}).get("hook", ""),
+        },
+    )
 
     logger.info("Processing task job_id=%s", task.job_id)
     try:
@@ -156,7 +159,9 @@ def process_youtube():
             title = yt_task.title
         else:
             title = yt_task.title[:MAX_YOUTUBE_TITLE_BASE_LENGTH] + TITLE_SUFFIX
-        description = yt_task.description.rstrip() + "\n\n" + _FIXED_HASHTAGS if yt_task.description else _FIXED_HASHTAGS
+        description = (
+            yt_task.description.rstrip() + "\n\n" + _FIXED_HASHTAGS if yt_task.description else _FIXED_HASHTAGS
+        )
         with gcs.open_blob(yt_task.output_uri) as f:
             video_id = uploader.upload_from_stream(
                 f,
@@ -196,7 +201,7 @@ def _verify_oidc_token(authorization: str, audience: str, expected_email: str = 
         return False
     if not authorization.startswith("Bearer "):
         return False
-    token = authorization[len("Bearer "):]
+    token = authorization[len("Bearer ") :]
     try:
         id_info = id_token.verify_oauth2_token(token, _GOOGLE_AUTH_REQUEST, audience)
         if expected_email and id_info.get("email") != expected_email:

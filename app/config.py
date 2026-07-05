@@ -38,7 +38,7 @@ class Config:
         return f"gs://{self.gcs_bucket}/{self.gcs_output_prefix}" if self.gcs_bucket else ""
 
     @classmethod
-    def from_env(cls) -> "Config":
+    def from_env(cls) -> Config:
         """環境変数からアプリケーション設定を読み込む。"""
         service_url = os.getenv("SERVICE_URL", "http://localhost:8080").rstrip("/")
         worker_url = os.getenv("WORKER_URL", "").strip()

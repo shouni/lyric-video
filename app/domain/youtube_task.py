@@ -23,5 +23,5 @@ class YouTubeTask:
         return json.dumps(asdict(self))
 
     @classmethod
-    def from_json(cls, data: str | bytes) -> "YouTubeTask":
+    def from_json(cls, data: str | bytes) -> YouTubeTask:
         return cls(**json.loads(data))

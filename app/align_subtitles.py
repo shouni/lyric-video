@@ -5,14 +5,15 @@ Usage:
     python3 align_subtitles.py <audio.mp3> <keyframes.zip|subtitles.ass> [output.ass]
 """
 
+import argparse
 import re
 import sys
 import zipfile
-import argparse
-import stable_whisper
-import pysubs2
 
-PUNCT_PATTERN = re.compile(r'[　 、。！？!?,.\s\-\[\]\(\)「」『』〜♪…※☆★●○◎]')
+import pysubs2
+import stable_whisper
+
+PUNCT_PATTERN = re.compile(r"[　 、。！？!?,.\s\-\[\]\(\)「」『』〜♪…※☆★●○◎]")
 TAIL_MS = 300  # 最終文字後の表示延長
 FILL_GAP_MARGIN_MS = 100  # 繰り返し歌唱時に次行との間に残す余白
 
@@ -21,7 +22,7 @@ def words_to_chars(segments):
     """Whisperの単語タイムスタンプを文字単位のタイミングへ等分配する。"""
     chars = []
     for seg in segments:
-        if not (hasattr(seg, 'words') and seg.words):
+        if not (hasattr(seg, "words") and seg.words):
             continue
         for w in seg.words:
             word = w.word.strip()
@@ -30,11 +31,13 @@ def words_to_chars(segments):
             n = len(word)
             per = (w.end - w.start) / n
             for i, ch in enumerate(word):
-                chars.append({
-                    "char": ch,
-                    "start": w.start + i * per,
-                    "end":   w.start + (i + 1) * per,
-                })
+                chars.append(
+                    {
+                        "char": ch,
+                        "start": w.start + i * per,
+                        "end": w.start + (i + 1) * per,
+                    }
+                )
     return chars
 
 
@@ -60,18 +63,15 @@ def main():
         with zipfile.ZipFile(args.subtitles_in) as zf:
             names = zf.namelist()
             if "subtitles.ass" not in names:
-                raise SystemExit(
-                    f"Error: keyframes.zip に subtitles.ass が含まれていません。"
-                    f" ZIP内のファイル: {names}"
-                )
+                raise SystemExit(f"Error: keyframes.zip に subtitles.ass が含まれていません。 ZIP内のファイル: {names}")
             with zf.open("subtitles.ass") as f:
                 subs_orig = pysubs2.SSAFile.from_string(f.read().decode("utf-8"))
     else:
         subs_orig = pysubs2.load(args.subtitles_in)
     orig_events = []
     for event in subs_orig:
-        plain = re.sub(r'\{[^}]*\}', '', event.text)
-        plain = re.sub(r'\\[nNh]', '', plain).strip()
+        plain = re.sub(r"\{[^}]*\}", "", event.text)
+        plain = re.sub(r"\\[nNh]", "", plain).strip()
         if plain:
             orig_events.append(plain)
 
@@ -104,7 +104,10 @@ def main():
     flat_whisper = [c for c in all_chars if PUNCT_PATTERN.match(c["char"]) is None]
 
     if len(flat_orig) != len(flat_whisper):
-        print(f"Error: 文字数が一致しません (orig={len(flat_orig)}, whisper={len(flat_whisper)})。タイミングが全体的にずれるためアライメントを中断します。", file=sys.stderr)
+        print(
+            f"Error: 文字数が一致しません (orig={len(flat_orig)}, whisper={len(flat_whisper)})。タイミングが全体的にずれるためアライメントを中断します。",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
     n = len(flat_orig)
@@ -125,8 +128,8 @@ def main():
 
     valid_line_idx = 0
     for event in subs_orig:
-        plain = re.sub(r'\{[^}]*\}', '', event.text)
-        plain = re.sub(r'\\[nNh]', '', plain).strip()
+        plain = re.sub(r"\{[^}]*\}", "", event.text)
+        plain = re.sub(r"\\[nNh]", "", plain).strip()
 
         if not plain:
             # テキストを持たないイベント（空行やタグのみ）はそのまま保持
@@ -141,7 +144,7 @@ def main():
             continue
 
         line_start_s = char_timings[0]["start"]
-        line_end_s   = char_timings[-1]["end"] + TAIL_MS / 1000
+        line_end_s = char_timings[-1]["end"] + TAIL_MS / 1000
 
         # 元の行の文字（句読点含む）に \k を割り当て
         # 句読点はその前の文字の \k に吸収させる
@@ -176,14 +179,14 @@ def main():
             new_event.start = event.start
         else:
             new_event.start = ms(line_start_s)
-        new_event.end   = ms(line_end_s)
-        new_event.text  = ass_text
+        new_event.end = ms(line_end_s)
+        new_event.text = ass_text
         new_subs.append(new_event)
 
         print(f"  行{valid_line_idx}: {line_start_s:.2f}s - {line_end_s:.2f}s | {plain}")
 
     # --- 繰り返し歌唱対応: ギャップを次行開始直前まで延長 ---
-    text_events = [e for e in new_subs if re.sub(r'\{[^}]*\}', '', e.text).strip()]
+    text_events = [e for e in new_subs if re.sub(r"\{[^}]*\}", "", e.text).strip()]
     for i in range(len(text_events) - 1):
         curr = text_events[i]
         next_ev = text_events[i + 1]

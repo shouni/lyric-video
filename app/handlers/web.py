@@ -316,10 +316,15 @@ def job_detail(job_id: str):
             "youtube_enabled": current_app.youtube_uploader is not None,
         }, 200
 
-    return render_template("job_detail.html", job=job, signed_url=signed_url, download_url=download_url,
-                           csrf_token=session["csrf_token"],
-                           youtube_enabled=current_app.youtube_uploader is not None,
-                           max_youtube_title_len=MAX_YOUTUBE_TITLE_BASE_LENGTH)
+    return render_template(
+        "job_detail.html",
+        job=job,
+        signed_url=signed_url,
+        download_url=download_url,
+        csrf_token=session["csrf_token"],
+        youtube_enabled=current_app.youtube_uploader is not None,
+        max_youtube_title_len=MAX_YOUTUBE_TITLE_BASE_LENGTH,
+    )
 
 
 def _save_job_meta(record: JobRecord) -> None:
