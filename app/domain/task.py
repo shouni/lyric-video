@@ -4,7 +4,7 @@ import json
 import re
 import secrets
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 _JOB_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$")
 
@@ -12,7 +12,7 @@ _JOB_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$")
 def new_job_id(prefix: str = "lyric") -> str:
     """接頭辞・UTC時刻・乱数からCloud Tasks向けのジョブIDを生成する。"""
     prefix = re.sub(r"[^a-z0-9]", "", prefix.lower()) or "job"
-    ts = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    ts = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
     rand = secrets.token_hex(6)
     return f"{prefix}-{ts}-{rand}"
 
@@ -25,14 +25,14 @@ class Task:
     subs_url: str = ""
     whisper_model: str = "large-v3"
     output_prefix: str = ""
-    created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    created_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
 
     def to_json(self) -> str:
         """タスク内容をJSON文字列へ変換する。"""
         return json.dumps(asdict(self))
 
     @classmethod
-    def from_json(cls, data: str | bytes) -> "Task":
+    def from_json(cls, data: str | bytes) -> Task:
         """JSON文字列またはバイト列からTaskを復元する。"""
         return cls(**json.loads(data))
 

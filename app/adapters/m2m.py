@@ -20,7 +20,7 @@ def verify_m2m_token(authorization_header: str, audience: str, allowed_service_a
     if not allowed_service_accounts or not authorization_header.startswith("Bearer "):
         return None
 
-    token = authorization_header[len("Bearer "):]
+    token = authorization_header[len("Bearer ") :]
     try:
         # verify_oauth2_token は無効なトークンに ValueError、発行者不一致や証明書取得の
         # 通信エラーに google.auth.exceptions.GoogleAuthError を送出する（公式docstring参照）。

@@ -42,7 +42,15 @@ docker build -t lyric-video .
 gcloud builds submit --config=cloudbuild.yaml
 ```
 
-このリポジトリに lint/format/test の自動化ツール（ruff, pytest 等）は導入されていない。テストコードも存在しない。変更後は `python3 -c "import app.main"` 等で構文・importエラーがないか確認する。
+lint/format には ruff を導入済み（`pyproject.toml`、CI: `.github/workflows/ci.yml`）。テストコードは存在しない。変更後は以下で確認する。
+
+```sh
+ruff check .
+ruff format --check .
+python3 -c "import app.main"
+```
+
+CI は Python 3.11（Dockerfile と同じ）で実行される。ローカルの `.venv` が古い Python バージョンの場合、`datetime.UTC` 等 3.11 以降の構文で import エラーになることがあるが、CI/本番の 3.11 環境では問題ない。
 
 ## 規約・注意点
 

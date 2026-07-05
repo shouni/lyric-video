@@ -15,8 +15,8 @@ import zipfile
 from dataclasses import dataclass
 from typing import Any
 
-from PIL import Image, ImageDraw, ImageFont
 import pysubs2
+from PIL import Image, ImageDraw, ImageFont
 
 
 @dataclass
@@ -66,9 +66,9 @@ def parse_karaoke(raw_text):
     """ASSのカラオケ\\kタグをセンチ秒単位のテキスト区間へ分解する。"""
     segments = []
     cs = 0
-    for m in re.finditer(r'\{\\k(\d+)\}([^{]*)', raw_text):
+    for m in re.finditer(r"\{\\k(\d+)\}([^{]*)", raw_text):
         k = int(m.group(1))
-        text = re.sub(r'\\[nNh]', '', m.group(2))
+        text = re.sub(r"\\[nNh]", "", m.group(2))
         segments.append((cs, cs + k, text))
         cs += k
     return segments
@@ -248,13 +248,26 @@ def run_ffmpeg(concat_txt, audio, output):
     print("\nRunning ffmpeg...")
     return subprocess.run(
         [
-            "ffmpeg", "-y",
-            "-loglevel", "error",
-            "-f", "concat", "-safe", "0",
-            "-i", concat_txt,
-            "-i", audio,
-            "-c:v", "libx264", "-c:a", "aac", "-b:a", "192k",
-            "-pix_fmt", "yuv420p",
+            "ffmpeg",
+            "-y",
+            "-loglevel",
+            "error",
+            "-f",
+            "concat",
+            "-safe",
+            "0",
+            "-i",
+            concat_txt,
+            "-i",
+            audio,
+            "-c:v",
+            "libx264",
+            "-c:a",
+            "aac",
+            "-b:a",
+            "192k",
+            "-pix_fmt",
+            "yuv420p",
             "-shortest",
             output,
         ],

@@ -6,15 +6,15 @@ import sys
 from flask import Flask, g, redirect, request, url_for
 from werkzeug.middleware.proxy_fix import ProxyFix
 
-from app.auth import auth_bp, get_user_email, init_oauth
-from app.config import Config
 from app.adapters.m2m import verify_m2m_token
 from app.adapters.slack import SlackNotifier
 from app.adapters.task_queue import CloudTasksQueue
 from app.adapters.youtube import YouTubeUploader
-from app.pipeline.runner import PipelineRunner
+from app.auth import auth_bp, get_user_email, init_oauth
+from app.config import Config
 from app.handlers.web import web_bp
 from app.handlers.worker import worker_bp
+from app.pipeline.runner import PipelineRunner
 
 logging.basicConfig(
     stream=sys.stdout,
