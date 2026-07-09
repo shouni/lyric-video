@@ -188,6 +188,7 @@ def publish_youtube(job_id: str):
 
     try:
         job["youtube_status"] = "queued"
+        job["youtube_thumbnail_uri"] = yt_task.thumbnail_uri
         gcs.save_json(job, meta_uri)
     except Exception as exc:
         logger.warning("Failed to update meta for YouTube queue job_id=%s: %s", job_id, exc)

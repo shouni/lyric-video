@@ -4,7 +4,7 @@ import json
 from dataclasses import asdict, dataclass
 from typing import Literal
 
-TITLE_SUFFIX = " | 【AI音楽 / リリックビデオ】Digital Armor Style"
+TITLE_SUFFIX = " | 【AI音楽 / リリックMV】Digital Armor Style"
 MAX_YOUTUBE_TITLE_LENGTH = 100
 MAX_YOUTUBE_TITLE_BASE_LENGTH = MAX_YOUTUBE_TITLE_LENGTH - len(TITLE_SUFFIX)
 
