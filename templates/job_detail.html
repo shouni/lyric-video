@@ -110,7 +110,8 @@
               </div>
               <div class="mb-3">
                 <label class="form-label fw-semibold">サムネイル <span class="text-muted fw-normal">(GCS URI・省略可)</span></label>
-                <input type="text" class="form-control" name="youtube_thumbnail_uri" placeholder="gs://bucket/path/to/cover.jpg">
+                <input type="text" class="form-control" name="youtube_thumbnail_uri" placeholder="gs://bucket/path/to/cover.jpg"
+                       value="{{ job.youtube_thumbnail_uri or '' }}">
                 <div class="form-text">最大 2MB・16:9 推奨</div>
               </div>
               <div class="mb-3">
@@ -153,7 +154,7 @@
                 <label class="form-label fw-semibold">タイトル <span class="text-danger">*</span></label>
                 <input type="text" class="form-control" name="youtube_title" required maxlength="{{ max_youtube_title_len }}"
                        value="{{ job.title or '' }}" placeholder="曲名（サフィックスは自動付与）">
-                <div class="form-text">「 | 【AI音楽 / リリックビデオ】Digital Armor Style」が自動で末尾に付きます</div>
+                <div class="form-text">「 | 【AI音楽 / リリックMV】Digital Armor Style」が自動で末尾に付きます</div>
               </div>
               <div class="mb-3">
                 <label class="form-label fw-semibold">説明 <span class="text-muted fw-normal">(省略可)</span></label>
@@ -161,7 +162,8 @@
               </div>
               <div class="mb-3">
                 <label class="form-label fw-semibold">サムネイル <span class="text-muted fw-normal">(GCS URI・省略可)</span></label>
-                <input type="text" class="form-control" name="youtube_thumbnail_uri" placeholder="gs://bucket/path/to/cover.jpg">
+                <input type="text" class="form-control" name="youtube_thumbnail_uri" placeholder="gs://bucket/path/to/cover.jpg"
+                       value="{{ job.youtube_thumbnail_uri or '' }}">
                 <div class="form-text">最大 2MB・16:9 推奨</div>
               </div>
               <div class="mb-3">
