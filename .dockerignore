@@ -28,6 +28,9 @@ __pycache__/
 README.md
 LICENSE
 
+# Operational scripts (not needed inside the container)
+scripts/
+
 # Local dev artifacts
 .env
 .flaskenv
