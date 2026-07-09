@@ -49,15 +49,13 @@
             お使いのブラウザは動画再生に対応していません。
           </video>
         </div>
-        {% set default_yt_description %}🤖 AIが作詞・作曲からMVまで完全自動生成したオリジナル楽曲です。
-
-【楽曲テーマ】
+        {% set default_yt_description %}【楽曲テーマ】
 {{ job.theme or '（ここに楽曲テーマを入力）' }}
 {% if job.hook %}
 🎵 「{{ job.hook }}」
 {% endif %}
 🎤 キャラクター
-・立ち絵・音声：春日部つむぎ（VOICEVOX）
+・立ち絵：春日部つむぎ（VOICEVOX）
 
 🛠️ Developer's Note
 このカラオケ動画の生成の仕組み（歌詞タイミング解析・動画合成）や、AIによる楽曲生成・オーケストレーションの仕組みは、以下の記事で詳しく解説しています！
