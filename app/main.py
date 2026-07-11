@@ -64,7 +64,7 @@ def create_app() -> Flask:
     app.config_obj = cfg
     app.queue = queue
     app.notifier = SlackNotifier(cfg.slack_webhook_url, cfg.service_url)
-    app.pipeline = PipelineRunner()
+    app.pipeline = PipelineRunner(ap_mv_bucket=cfg.ap_mv_bucket, ap_music_bucket=cfg.ap_music_bucket)
     app.youtube_uploader = youtube_uploader
 
     app.register_blueprint(auth_bp)

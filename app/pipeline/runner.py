@@ -18,6 +18,10 @@ _SCRIPTS_DIR = Path(__file__).resolve().parent.parent
 
 
 class PipelineRunner:
+    def __init__(self, ap_mv_bucket: str = "ap-mv", ap_music_bucket: str = "ap-music") -> None:
+        self._ap_mv_bucket = ap_mv_bucket
+        self._ap_music_bucket = ap_music_bucket
+
     def run(self, task: Task) -> str:
         """入力素材を取得し、字幕生成・焼き込み・アップロードまでの全工程を実行する。"""
         if task.source_type == "video":
@@ -29,7 +33,14 @@ class PipelineRunner:
         with tempfile.TemporaryDirectory(prefix="lyric_video_merge_") as work_dir:
             work = Path(work_dir)
             output_path = work / "output.mp4"
-            video_merge.build(task.ap_mv_job_id, task.music_job_id, work, output_path)
+            video_merge.build(
+                task.ap_mv_job_id,
+                task.music_job_id,
+                work,
+                output_path,
+                ap_mv_bucket=self._ap_mv_bucket,
+                ap_music_bucket=self._ap_music_bucket,
+            )
 
             output_uri = f"{task.output_prefix.rstrip('/')}/{task.job_id}/output.mp4"
             logger.info("Uploading output to %s", output_uri)

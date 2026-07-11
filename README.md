@@ -68,6 +68,8 @@ Cloud Run (同一サービス / worker エンドポイント)
 | `GCP_LOCATION_ID` | ➖ | リージョン（省略時: `asia-northeast1`） |
 | `GCS_OUTPUT_PREFIX` | ➖ | 出力先パスプレフィックス（省略時: `lyric-video/output`） |
 | `WHISPER_MODEL` | ➖ | Whisper モデルサイズ（省略時: `large-v3`） |
+| `AP_MV_BUCKET` | ➖ | video合成モード（`source_type=video`）でap-mvの成果物を参照するGCSバケット名（省略時: `ap-mv`） |
+| `AP_MUSIC_BUCKET` | ➖ | video合成モードでap-musicの楽曲を参照するGCSバケット名（省略時: `ap-music`） |
 | `ALLOWED_EMAILS` | ➖ | アクセス許可メールアドレス（カンマ区切り）`ALLOWED_DOMAINS` との**どちらか必須** |
 | `ALLOWED_DOMAINS` | ➖ | アクセス許可ドメイン（カンマ区切り、例: `example.com`）`ALLOWED_EMAILS` との**どちらか必須** |
 | `ALLOWED_M2M_SERVICE_ACCOUNTS` | ➖ | ユーザー向けエンドポイントを OIDC Bearer トークン（`Authorization: Bearer <ID Token>`, audience=`SERVICE_URL`）で呼び出せるサービスアカウントのメールアドレス一覧（カンマ区切り）。MCP ゲートウェイなど他サービスからのマシン間呼び出し向け。未設定の場合、M2M呼び出しは常に拒否されます |

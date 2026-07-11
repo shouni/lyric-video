@@ -15,8 +15,6 @@ from app.burn_subs import load_font
 
 logger = logging.getLogger(__name__)
 
-_AP_MV_BUCKET = "ap-mv"
-_AP_MUSIC_BUCKET = "ap-music"
 _SUBPROCESS_TIMEOUT_SEC = 300.0
 # Whisperのモデルロード込みで動く可能性があるため、通常のffmpeg/ffprobe呼び出しより
 # 長いタイムアウトを与える。
@@ -39,13 +37,20 @@ def _safe_sec(value, field: str) -> float:
     return sec
 
 
-def build(ap_mv_job_id: str, music_job_id: str, work_dir: Path, output_path: Path) -> Path:
+def build(
+    ap_mv_job_id: str,
+    music_job_id: str,
+    work_dir: Path,
+    output_path: Path,
+    ap_mv_bucket: str = "ap-mv",
+    ap_music_bucket: str = "ap-music",
+) -> Path:
     """ap-mvの1セクション分の完成動画とap-musicの楽曲を合成し、字幕焼き込み済みMP4を作る。
 
     ap-mvのVeo video-to-video継続生成では後続カットほど直前カットを含む累積動画に
     なるため、cut_indexが最大のカット（＝そのセクションの完成版）だけを使う。
     """
-    meta = gcs.load_json(f"gs://{_AP_MV_BUCKET}/veo/jobs/{ap_mv_job_id}/video_music_meta.json")
+    meta = gcs.load_json(f"gs://{ap_mv_bucket}/veo/jobs/{ap_mv_job_id}/video_music_meta.json")
     cuts = meta.get("cuts") or []
     if not cuts:
         raise ValueError(f"ap-mv job {ap_mv_job_id!r} has no cuts")
@@ -61,7 +66,7 @@ def build(ap_mv_job_id: str, music_job_id: str, work_dir: Path, output_path: Pat
     logger.info("Downloading section video from %s", video_uri)
     gcs.download(video_uri, str(video_path))
 
-    audio_uri = f"gs://{_AP_MUSIC_BUCKET}/{music_job_id}.mp3"
+    audio_uri = f"gs://{ap_music_bucket}/{music_job_id}.mp3"
     full_audio_path = work_dir / "full_song.mp3"
     logger.info("Downloading music from %s", audio_uri)
     gcs.download(audio_uri, str(full_audio_path))
