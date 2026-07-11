@@ -8,7 +8,7 @@
 
 ## 🎯 概要
 
-**Lyric Video** は、MP3 からカラオケ字幕付き MP4 動画を生成し、YouTube へ自動投稿する **オーケストレーター** です。GCS 上の音声・キーフレーム素材を受け取り、Whisper アライメント・字幕焼き込み・エンコードを Cloud Run 上で非同期実行します。生成した動画はジョブ詳細画面から GCS を経由して YouTube へ直接ストリーミングアップロードでき、削除済み動画の再アップロードにも対応しています。
+**Lyric Video** は、MP3 からカラオケ字幕付き MP4 動画を生成し、YouTube へ自動投稿する **オーケストレーター** です。ap-mv（キーフレーム/Veo動画）・ap-music（楽曲）の Job ID を指定するだけで、GCS 上の素材を自動的に参照し、Whisper アライメント・字幕焼き込み・エンコードを Cloud Run 上で非同期実行します。生成した動画はジョブ詳細画面から GCS を経由して YouTube へ直接ストリーミングアップロードでき、削除済み動画の再アップロードにも対応しています。
 
 ブラウザ単体でも完結しますが、OIDC によるマシン間認証と JSON API レスポンスに対応しており、MCP (Model Context Protocol) ゲートウェイ経由で AI エージェントから動画生成・YouTube 公開を操作できるように設計されています。
 
@@ -18,7 +18,7 @@
 
 ```
 ブラウザ（Google OAuth2 認証済み）
-  │  /new フォームで GCS URL を入力
+  │  /new フォームで ap-mv Job ID / Music Job ID（+ 素材の種類）を入力
   ▼
 Cloud Run (Flask)
   │  job_id を生成 → meta.json を GCS へ保存 → キューに投入
@@ -27,10 +27,19 @@ Cloud Tasks
   │  POST /tasks/generate を非同期呼び出し
   ▼
 Cloud Run (同一サービス / worker エンドポイント)
-  ├─ GCS から audio.mp3 / keyframes.zip をダウンロード
-  ├─ Whisper でカラオケタイミング生成（ASS 未指定時）
-  ├─ PIL で字幕を焼き込み MP4 生成
-  └─ GCS へアップロード → meta.json 更新 → Slack 通知
+  │  Job ID から GCS パスを導出（AP_MV_BUCKET / AP_MUSIC_BUCKET）
+  │
+  ├─【素材の種類 = images】静止画スライドショー
+  │   ├─ GCS から audio.mp3 / keyframes.zip をダウンロード
+  │   ├─ Whisper でカラオケタイミング生成（ASS 未指定時）
+  │   ├─ PIL で字幕を焼き込み MP4 生成
+  │   └─ GCS へアップロード → meta.json 更新 → Slack 通知
+  │
+  └─【素材の種類 = video】ap-mv動画 + ap-music楽曲の合成
+      ├─ ap-mvの完成動画（Veo生成、1セクション分）とap-musicの楽曲をダウンロード
+      ├─ Whisperで実音声に強制アライメントしてカラオケ字幕を生成
+      ├─ ffmpeg(libass)で動画に字幕を焼き込み・音声とmux
+      └─ GCS へアップロード → meta.json 更新 → Slack 通知
 
 【オプション】YouTube 公開（動画確認後に手動トリガー）
   │  ジョブ詳細画面の「YouTube に公開」フォームを送信
@@ -68,8 +77,8 @@ Cloud Run (同一サービス / worker エンドポイント)
 | `GCP_LOCATION_ID` | ➖ | リージョン（省略時: `asia-northeast1`） |
 | `GCS_OUTPUT_PREFIX` | ➖ | 出力先パスプレフィックス（省略時: `lyric-video/output`） |
 | `WHISPER_MODEL` | ➖ | Whisper モデルサイズ（省略時: `large-v3`） |
-| `AP_MV_BUCKET` | ➖ | video合成モード（`source_type=video`）でap-mvの成果物を参照するGCSバケット名（省略時: `ap-mv`） |
-| `AP_MUSIC_BUCKET` | ➖ | video合成モードでap-musicの楽曲を参照するGCSバケット名（省略時: `ap-music`） |
+| `AP_MV_BUCKET` | ➖ | ap-mvの成果物（keyframes.zip / 完成動画・歌詞タイミング）を参照するGCSバケット名。images/video両モードで使用（省略時: `ap-mv`） |
+| `AP_MUSIC_BUCKET` | ➖ | ap-musicの楽曲(mp3)を参照するGCSバケット名。images/video両モードで使用（省略時: `ap-music`） |
 | `ALLOWED_EMAILS` | ➖ | アクセス許可メールアドレス（カンマ区切り）`ALLOWED_DOMAINS` との**どちらか必須** |
 | `ALLOWED_DOMAINS` | ➖ | アクセス許可ドメイン（カンマ区切り、例: `example.com`）`ALLOWED_EMAILS` との**どちらか必須** |
 | `ALLOWED_M2M_SERVICE_ACCOUNTS` | ➖ | ユーザー向けエンドポイントを OIDC Bearer トークン（`Authorization: Bearer <ID Token>`, audience=`SERVICE_URL`）で呼び出せるサービスアカウントのメールアドレス一覧（カンマ区切り）。MCP ゲートウェイなど他サービスからのマシン間呼び出し向け。未設定の場合、M2M呼び出しは常に拒否されます |
@@ -165,7 +174,22 @@ gcloud builds submit --config=cloudbuild.yaml
 
 ---
 
-## 📦 入力 ZIP の構成
+## 🎬 素材の種類（`source_type`）
+
+`/new` フォームでは、生成する MV の素材を2種類から選べます。どちらも入力は共通で **ap-mv Job ID** と **Music Job ID** の2つだけです（GCS URL を直接入力する必要はありません。パスは `AP_MV_BUCKET` / `AP_MUSIC_BUCKET` から自動的に組み立てられます）。
+
+| `source_type` | 素材 | 説明 |
+|---|---|---|
+| `images`（デフォルト） | ap-mv の `keyframes.zip`（静止画） + ap-music の楽曲 | 既存の静止画スライドショー方式。`subs_url`（省略可）・`whisper_model` を追加指定できる |
+| `video` | ap-mv の完成動画（Veo生成、1セクション分） + ap-music の楽曲 | Veo で生成済みの実写アニメーション動画に、Whisper で実音声へ強制アライメントしたカラオケ字幕を焼き込む。`video`モードでは1回の生成は曲の1セクション分（例: Aメロ、サビ等）が対象で、曲全体を通しで作るには非対応 |
+
+`video` モードでは、ap-mv の `cuts[].start_sec`/`end_sec` は演出上のカット割り当てであり実際の歌唱タイミングと一致しないため使用しない。必ず実音声を Whisper で強制アライメントしてタイミングを求める（`app/video_merge.py`）。
+
+---
+
+## 📦 入力 ZIP の構成（`images` モード）
+
+ap-mv が生成する `keyframes.zip`（`AP_MV_BUCKET` 配下）の内部構成です。`video` モードではこの ZIP は使用しません。
 
 ```
 keyframes.zip
