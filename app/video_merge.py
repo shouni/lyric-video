@@ -65,7 +65,10 @@ def build(
         raise ValueError(f"ap-mv job {ap_mv_job_id!r} has no cuts")
 
     cuts_sorted = sorted(cuts, key=lambda c: c.get("cut_index", 0))
-    section_start_sec = _safe_sec(cuts_sorted[0].get("start_sec"), "cuts[0].start_sec")
+    # ap-mv側のstart_secはjson:"start_sec,omitempty"のため、先頭カットのように値が
+    # 正当に0の場合キー自体が省略される。省略されたキーの値は常に0であると保証されて
+    # いる(omitemptyがfloat64を省略するのは値が0.0の場合のみ)ため、欠落時は0.0として扱う。
+    section_start_sec = _safe_sec(cuts_sorted[0].get("start_sec", 0.0), "cuts[0].start_sec")
 
     chain_end_cuts = _detect_chain_end_cuts(cuts_sorted)
     chain_video_paths = []
