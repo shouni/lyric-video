@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import shlex
 import subprocess
 from pathlib import Path
 
@@ -176,7 +177,7 @@ def _probe_duration(path: Path) -> float:
 
 
 def _run(cmd: list[str], step: str) -> subprocess.CompletedProcess:
-    logger.info("Running %s: %s", step, " ".join(cmd))
+    logger.info("Running %s: %s", step, shlex.join(cmd))
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=_SUBPROCESS_TIMEOUT_SEC)
     except subprocess.TimeoutExpired as exc:

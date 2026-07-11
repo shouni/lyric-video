@@ -74,6 +74,8 @@ class Task:
         if self.source_type == "video":
             _check_job_id_ref(self.ap_mv_job_id, "ap_mv_job_id")
             _check_job_id_ref(self.music_job_id, "music_job_id")
+            # audio_url/keyframes_url/subs_url/whisper_modelはimagesモード専用で、
+            # videoモードでは video_merge.build() から一切参照されないため未検証のまま無視する。
         else:
             _check_gcs_uri(self.audio_url, "audio_url")
             _check_gcs_uri(self.keyframes_url, "keyframes_url")

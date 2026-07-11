@@ -19,8 +19,18 @@ document.addEventListener('DOMContentLoaded', () => {
     function syncSourceType() {
         if (!sourceType || !imagesFields || !videoFields) return;
         const isVideo = sourceType.value === 'video';
+
         imagesFields.style.display = isVideo ? 'none' : '';
         videoFields.style.display = isVideo ? '' : 'none';
+
+        // disabledな入力欄はフォーム送信対象から除外されるため、非表示側の値が
+        // 誤って送信されるのを防ぐ（サーバー側バリデーションの混乱を避ける）。
+        imagesFields.querySelectorAll('input, select').forEach((el) => {
+            el.disabled = isVideo;
+        });
+        videoFields.querySelectorAll('input, select').forEach((el) => {
+            el.disabled = !isVideo;
+        });
     }
 
     if (sourceType && imagesFields && videoFields) {

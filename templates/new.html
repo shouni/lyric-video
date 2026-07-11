@@ -28,7 +28,7 @@
           <div id="images_fields">
             <div class="mb-3">
               <label class="form-label fw-semibold">Audio GCS URL</label>
-              <input type="text" class="form-control" name="audio_url"
+              <input type="text" class="form-control" name="audio_url" required
                      placeholder="gs://bucket/path/to/audio.mp3"
                      value="{{ audio_url or '' }}">
               <div class="form-text">MP3 ファイルの GCS パス</div>
@@ -36,7 +36,7 @@
 
             <div class="mb-3">
               <label class="form-label fw-semibold">Keyframes ZIP GCS URL</label>
-              <input type="text" class="form-control" name="keyframes_url"
+              <input type="text" class="form-control" name="keyframes_url" required
                      placeholder="gs://bucket/path/to/keyframes.zip"
                      value="{{ keyframes_url or '' }}">
               <div class="form-text">PNG・inputs.txt・subtitles.ass を含む ZIP</div>
@@ -67,7 +67,7 @@
           <div id="video_fields">
             <div class="mb-3">
               <label class="form-label fw-semibold">ap-mv Job ID</label>
-              <input type="text" class="form-control" name="ap_mv_job_id"
+              <input type="text" class="form-control" name="ap_mv_job_id" required
                      placeholder="video-recipe-... または short-..."
                      value="{{ ap_mv_job_id or '' }}">
               <div class="form-text">そのセクションの完成動画・開始秒・歌詞タイミングをここから取得します</div>
@@ -75,7 +75,7 @@
 
             <div class="mb-3">
               <label class="form-label fw-semibold">Music Job ID</label>
-              <input type="text" class="form-control" name="music_job_id"
+              <input type="text" class="form-control" name="music_job_id" required
                      placeholder="20260710132823-256e9128"
                      value="{{ music_job_id or '' }}">
               <div class="form-text">gs://ap-music/&lt;job_id&gt;.mp3 を参照します</div>
