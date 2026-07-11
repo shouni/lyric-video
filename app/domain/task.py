@@ -20,17 +20,16 @@ def new_job_id(prefix: str = "lyric") -> str:
 @dataclass
 class Task:
     job_id: str
-    audio_url: str = ""
-    keyframes_url: str = ""
+    # ap-mv/ap-musicのjob_idからGCSパスを導出する(gs://<bucket>/veo/jobs/<ap_mv_job_id>/...,
+    # gs://<bucket>/<music_job_id>.mp3)。source_typeに関わらず両モード共通で必須。
+    ap_mv_job_id: str = ""
+    music_job_id: str = ""
     subs_url: str = ""
     whisper_model: str = "large-v3"
     output_prefix: str = ""
-    # source_type == "video" のとき、audio_url/keyframes_url の代わりに
-    # ap_mv_job_id/music_job_id からap-mv/ap-musicの成果物を直接参照する
-    # （静止画スライドショーではなく、Veo生成済みの実写動画を使う経路）。
+    # source_type == "video": ap-mvの完成動画(Veo生成)とap-musicの楽曲を合成する経路。
+    # source_type == "images": ap-mvのkeyframes.zip(静止画)とap-musicの楽曲でスライドショーを作る経路。
     source_type: str = "images"
-    ap_mv_job_id: str = ""
-    music_job_id: str = ""
     created_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
 
     def to_json(self) -> str:
@@ -71,14 +70,9 @@ class Task:
             elif not _JOB_ID_PATTERN.match(value):
                 errors.append(f"invalid {field}: {value!r}")
 
-        if self.source_type == "video":
-            _check_job_id_ref(self.ap_mv_job_id, "ap_mv_job_id")
-            _check_job_id_ref(self.music_job_id, "music_job_id")
-            # audio_url/keyframes_url/subs_url/whisper_modelはimagesモード専用で、
-            # videoモードでは video_merge.build() から一切参照されないため未検証のまま無視する。
-        else:
-            _check_gcs_uri(self.audio_url, "audio_url")
-            _check_gcs_uri(self.keyframes_url, "keyframes_url")
+        _check_job_id_ref(self.ap_mv_job_id, "ap_mv_job_id")
+        _check_job_id_ref(self.music_job_id, "music_job_id")
+        if self.source_type == "images":
             _check_gcs_uri(self.subs_url, "subs_url", required=False)
 
         _check_output_uri(self.output_prefix, "output_prefix")

@@ -18,6 +18,9 @@ class Config:
     gcs_output_prefix: str
     slack_webhook_url: str
     whisper_model: str
+    # video合成モード(source_type=video)でap-mv/ap-musicの成果物を参照するバケット名
+    ap_mv_bucket: str
+    ap_music_bucket: str
     # OAuth2
     google_client_id: str
     google_client_secret: str
@@ -58,6 +61,8 @@ class Config:
             gcs_output_prefix=os.getenv("GCS_OUTPUT_PREFIX", "lyric-video/output"),
             slack_webhook_url=os.getenv("SLACK_WEBHOOK_URL", ""),
             whisper_model=os.getenv("WHISPER_MODEL", "large-v3"),
+            ap_mv_bucket=os.getenv("AP_MV_BUCKET", "ap-mv"),
+            ap_music_bucket=os.getenv("AP_MUSIC_BUCKET", "ap-music"),
             google_client_id=os.getenv("GOOGLE_CLIENT_ID", ""),
             google_client_secret=os.getenv("GOOGLE_CLIENT_SECRET", ""),
             session_secret=_require_env("SESSION_SECRET"),

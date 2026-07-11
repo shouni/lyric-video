@@ -13,16 +13,14 @@ class JobRecord:
     job_id: str
     status: str  # queued | running | complete | failed
     created_at: str
-    audio_url: str
-    keyframes_url: str
+    ap_mv_job_id: str = ""
+    music_job_id: str = ""
     subs_url: str = ""
     whisper_model: str = "large-v3"
     output_prefix: str = ""
     output_uri: str = ""
     error: str = ""
     source_type: str = "images"
-    ap_mv_job_id: str = ""
-    music_job_id: str = ""
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -38,12 +36,10 @@ class JobRecord:
             job_id=task.job_id,
             status="queued",
             created_at=task.created_at or datetime.now(UTC).isoformat(),
-            audio_url=task.audio_url,
-            keyframes_url=task.keyframes_url,
+            ap_mv_job_id=task.ap_mv_job_id,
+            music_job_id=task.music_job_id,
             subs_url=task.subs_url,
             whisper_model=task.whisper_model,
             output_prefix=task.output_prefix,
             source_type=task.source_type,
-            ap_mv_job_id=task.ap_mv_job_id,
-            music_job_id=task.music_job_id,
         )
