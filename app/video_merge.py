@@ -1,22 +1,31 @@
 from __future__ import annotations
 
 import logging
+import re
 import shlex
 import subprocess
+import sys
 from pathlib import Path
 
 import pysubs2
+from PIL import Image, ImageDraw
 
 from app.adapters import gcs
+from app.burn_subs import load_font
 
 logger = logging.getLogger(__name__)
 
 _AP_MV_BUCKET = "ap-mv"
 _AP_MUSIC_BUCKET = "ap-music"
 _SUBPROCESS_TIMEOUT_SEC = 300.0
+# Whisperのモデルロード込みで動く可能性があるため、通常のffmpeg/ffprobe呼び出しより
+# 長いタイムアウトを与える。
+_ALIGN_TIMEOUT_SEC = 900.0
+_WHISPER_MODEL = "small"
 # 曲1本(セクションではなく全体)としてあり得る上限。異常なメタデータ(負値・極端な
 # 大きさ)をここで弾き、ffmpegに不正な-ss/-tをそのまま渡さないようにする。
 _MAX_PLAUSIBLE_SEC = 3600.0
+_ALIGN_SCRIPT = Path(__file__).resolve().parent / "align_subtitles.py"
 
 
 def _safe_sec(value, field: str) -> float:
@@ -58,6 +67,7 @@ def build(ap_mv_job_id: str, music_job_id: str, work_dir: Path, output_path: Pat
     gcs.download(audio_uri, str(full_audio_path))
 
     video_duration = _probe_duration(video_path)
+    video_width, video_height = _probe_dimensions(video_path)
 
     trimmed_audio_path = work_dir / "section_audio.mp3"
     _run(
@@ -79,8 +89,12 @@ def build(ap_mv_job_id: str, music_job_id: str, work_dir: Path, output_path: Pat
         "trim audio",
     )
 
+    reference_subs_path = work_dir / "reference_subtitles.ass"
+    fontsize = _write_reference_subtitles(cuts_sorted, video_width, video_height, reference_subs_path)
+
     subs_path = work_dir / "section_subtitles.ass"
-    _build_subtitles(cuts_sorted, section_start_sec, video_duration, subs_path)
+    _align_with_whisper(trimmed_audio_path, reference_subs_path, subs_path)
+    _wrap_aligned_subtitles(subs_path, video_width, fontsize)
 
     _run(
         [
@@ -122,43 +136,209 @@ def _escape_ffmpeg_filter_path(path: str) -> str:
     return path.replace("\\", "\\\\").replace(":", "\\:").replace("'", "\\'")
 
 
-def _build_subtitles(cuts_sorted: list[dict], section_start_sec: float, video_duration: float, out_path: Path) -> None:
-    """カット単位のdialogue/start_sec/end_secを、セクション開始基準の相対時刻へシフトしてASS化する。
+def _write_reference_subtitles(
+    cuts_sorted: list[dict],
+    video_width: int,
+    video_height: int,
+    out_path: Path,
+) -> int:
+    """カット単位のdialogueを歌詞順に並べた、タイミング未確定のリファレンスASSを作る。
 
-    end_secはap-mvレシピ上のnominal値で、Veo生成後の実動画長(video_duration)より
-    長いことがあるため、実尺を超えないようクランプする。
+    ap-mvのcuts[].start_sec/end_secは、Veoにどの絵をどのカットへ割り当てるかという
+    "演出上の割付け"であって実際の歌唱タイミングではない(例: 最初のカットを歌詞なしの
+    導入ショットにする、等)。そのため録音済み音声をWhisperで強制アライメントして初めて
+    正しい表示タイミングが得られる。ここではテキストと表示順序、スタイルだけを確定させ、
+    実際の開始・終了時刻は_align_with_whisperが上書きする(align_subtitles.py側の仕様で、
+    ここで設定するDialogueのStart/Endはそもそも使われない)。
+
+    PlayResX/PlayResYは実際の動画解像度に一致させる。ap-mvの動画は720x1280の縦長
+    (shorts想定)で、固定値(例:1920x1080)のままだとlibassが非一様スケーリングを
+    かけてしまい、字幕が意図した位置からずれる。フォントサイズ・マージンも高さに
+    比例させ、どの解像度でも同じ見た目比率にする。
+
+    alignmentはTOP_CENTERを使う。bottom-center(\\an2)はテキストブロック全体の
+    行数に応じて基準位置が変わるため、1行の歌詞と自動折り返しで2行になる歌詞とで
+    表示の高さが揃わない。top-center(\\an8)ならブロックの上端が常に固定され、
+    行数に関わらず一切の特別処理なしで位置が揃う。副次的に、shorts系プラットフォーム
+    (YouTube Shorts/TikTok/Reels)が画面下部に被せがちな独自UIとの衝突も避けられる。
     """
     subs = pysubs2.SSAFile()
-    subs.info["PlayResX"] = "1920"
-    subs.info["PlayResY"] = "1080"
+    subs.info["PlayResX"] = str(video_width)
+    subs.info["PlayResY"] = str(video_height)
+    # libassの自動折り返し(WrapStyle 0)はスペース位置でしか改行できず、日本語の
+    # スペースなしの長い行は画面外へはみ出す。折り返しは_wrap_aligned_subtitlesで
+    # 実測フォント幅に基づき自前で行うため、libass側の自動折り返しは無効化する。
+    subs.info["WrapStyle"] = "2"
+    fontsize = max(32, round(video_height * 0.055))
+    marginv = max(40, round(video_height * 0.10))
     style = pysubs2.SSAStyle(
         fontname="Arial",
-        fontsize=72,
+        fontsize=fontsize,
+        # primarycolor: \kハイライト後(既に歌われた部分)の色。secondarycolor: ハイライト前
+        # (まだ歌われていない部分)の色。pysubs2のデフォルトsecondarycolorは赤なので、
+        # 明示的に白を指定しないと未ハイライト部分が赤字になってしまう。
         primarycolor=pysubs2.Color(255, 255, 0),
+        secondarycolor=pysubs2.Color(255, 255, 255),
         outlinecolor=pysubs2.Color(0, 0, 0),
         bold=True,
         outline=3,
         shadow=1,
-        alignment=pysubs2.Alignment.BOTTOM_CENTER,
-        marginv=60,
+        alignment=pysubs2.Alignment.TOP_CENTER,
+        marginv=marginv,
     )
     subs.styles["Karaoke"] = style
 
+    placeholder_sec = 0.0
     for cut in cuts_sorted:
         text = (cut.get("dialogue") or "").strip()
         if not text:
             continue
-        start = _safe_sec(cut.get("start_sec"), "cuts[].start_sec") - section_start_sec
-        end = _safe_sec(cut.get("end_sec"), "cuts[].end_sec") - section_start_sec
-        start = max(0.0, min(start, video_duration))
-        end = max(0.0, min(end, video_duration))
-        if end <= start:
-            continue
-        event = pysubs2.SSAEvent(start=pysubs2.make_time(s=start), end=pysubs2.make_time(s=end), text=text)
+        event = pysubs2.SSAEvent(
+            start=pysubs2.make_time(s=placeholder_sec), end=pysubs2.make_time(s=placeholder_sec + 1), text=text
+        )
         event.style = "Karaoke"
         subs.append(event)
+        placeholder_sec += 1
 
     subs.save(str(out_path))
+    return fontsize
+
+
+def _align_with_whisper(audio_path: Path, reference_subs_path: Path, out_path: Path) -> None:
+    """align_subtitles.py(Whisper強制アライメント)でリファレンスASSの実際の発話時刻を求める。"""
+    _run(
+        [
+            sys.executable,
+            str(_ALIGN_SCRIPT),
+            str(audio_path),
+            str(reference_subs_path),
+            str(out_path),
+            "--model",
+            _WHISPER_MODEL,
+        ],
+        "align subtitles",
+        timeout=_ALIGN_TIMEOUT_SEC,
+    )
+
+
+_KARAOKE_TOKEN = re.compile(r"(\{\\k\d+\})([^{]*)")
+
+
+def _wrap_aligned_subtitles(subs_path: Path, video_width: int, fontsize: int) -> None:
+    """Whisperアライメント後のカラオケテキストを、実測フォント幅に基づいて折り返す。
+
+    libassの自動折り返し(WrapStyle 0)はスペースでしか改行できず、日本語のスペース
+    なしの長い行は画面外へはみ出す(_write_reference_subtitlesでWrapStyle:2に設定し、
+    libass側の自動折り返しは無効化済み)。ここでは{\\kNN}トークン単位で実際のグリフ幅を
+    burn_subs.py同じフォントで測定し、必要な位置に\\Nを挿入する。スペースの有無に
+    関わらず動作するため、_write_reference_subtitlesの想定と異なる歌詞が来ても崩れない。
+    """
+    font = load_font(fontsize)
+    draw = ImageDraw.Draw(Image.new("RGB", (1, 1)))
+    max_width = video_width - 40
+
+    subs = pysubs2.load(str(subs_path))
+    for event in subs:
+        event.text = _wrap_karaoke_text(event.text, draw, font, max_width)
+    subs.save(str(subs_path))
+
+
+def _wrap_karaoke_text(text: str, draw: ImageDraw.ImageDraw, font, max_width: float) -> str:
+    """{\\kNN}トークン列を、指定フォントでの実測幅がmax_widthを超えない範囲で行分割する。
+
+    まずスペースを含むトークンの直後を「単語」の区切りとして扱い、単語単位で
+    詰め込む(通常の折り返しと同様、単語の途中では割らない)。1単語だけで
+    max_widthを超える場合(スペースを含まない長い行)のみ、文字単位で強制的に
+    分割する。
+    """
+    tokens = _KARAOKE_TOKEN.findall(text)
+    if not tokens:
+        return text
+
+    words: list[list[tuple[str, str]]] = []
+    current_word: list[tuple[str, str]] = []
+    for tag, chunk in tokens:
+        current_word.append((tag, chunk))
+        if " " in chunk:
+            words.append(current_word)
+            current_word = []
+    if current_word:
+        words.append(current_word)
+
+    def token_str(tokens_: list[tuple[str, str]]) -> str:
+        return "".join(t + c for t, c in tokens_)
+
+    def token_plain(tokens_: list[tuple[str, str]]) -> str:
+        return "".join(c for _, c in tokens_)
+
+    def hard_break(word: list[tuple[str, str]]) -> list[str]:
+        """1単語だけでmax_widthを超える場合に、文字単位で強制的に折り返す。"""
+        sub_lines: list[str] = []
+        current: list[tuple[str, str]] = []
+        current_plain = ""
+        for tag, chunk in word:
+            candidate = current_plain + chunk
+            if draw.textlength(candidate, font=font) > max_width and current:
+                sub_lines.append(token_str(current))
+                current = [(tag, chunk)]
+                current_plain = chunk
+            else:
+                current.append((tag, chunk))
+                current_plain = candidate
+        if current:
+            sub_lines.append(token_str(current))
+        return sub_lines
+
+    lines: list[str] = []
+    current_line: list[tuple[str, str]] = []
+    current_plain = ""
+    for word in words:
+        word_plain = token_plain(word)
+        candidate_plain = current_plain + word_plain
+        if draw.textlength(candidate_plain, font=font) > max_width and current_line:
+            lines.append(token_str(current_line))
+            current_line = []
+            current_plain = ""
+
+        if draw.textlength(word_plain, font=font) > max_width:
+            sub_lines = hard_break(word)
+            lines.extend(sub_lines[:-1])
+            current_line = _KARAOKE_TOKEN.findall(sub_lines[-1]) if sub_lines else []
+            current_plain = token_plain(current_line)
+        else:
+            current_line.extend(word)
+            current_plain += word_plain
+
+    if current_line:
+        lines.append(token_str(current_line))
+    return r"\N".join(lines)
+
+
+def _probe_dimensions(path: Path) -> tuple[int, int]:
+    result = _run(
+        [
+            "ffprobe",
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-show_entries",
+            "stream=width,height",
+            "-of",
+            "csv=p=0:s=x",
+            str(path),
+        ],
+        "probe dimensions",
+    )
+    output = result.stdout.strip()
+    try:
+        width_str, height_str = output.split("x")
+        width, height = int(width_str), int(height_str)
+    except ValueError as exc:
+        raise RuntimeError(f"failed to parse dimensions from ffprobe output: {output!r}") from exc
+    if width <= 0 or height <= 0:
+        raise RuntimeError(f"probed dimensions must be positive, got {width}x{height}")
+    return width, height
 
 
 def _probe_duration(path: Path) -> float:
@@ -176,12 +356,12 @@ def _probe_duration(path: Path) -> float:
     return duration
 
 
-def _run(cmd: list[str], step: str) -> subprocess.CompletedProcess:
+def _run(cmd: list[str], step: str, timeout: float = _SUBPROCESS_TIMEOUT_SEC) -> subprocess.CompletedProcess:
     logger.info("Running %s: %s", step, shlex.join(cmd))
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=_SUBPROCESS_TIMEOUT_SEC)
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
     except subprocess.TimeoutExpired as exc:
-        raise RuntimeError(f"{step} timed out after {_SUBPROCESS_TIMEOUT_SEC}s") from exc
+        raise RuntimeError(f"{step} timed out after {timeout}s") from exc
     if result.returncode != 0:
         raise RuntimeError(f"{step} failed (exit {result.returncode}): {result.stderr}")
     return result
