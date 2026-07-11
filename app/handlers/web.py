@@ -87,6 +87,9 @@ def post_form():
         subs_url=request.form.get("subs_url", "").strip(),
         whisper_model=request.form.get("whisper_model", "large-v3"),
         output_prefix=output_prefix,
+        source_type=request.form.get("source_type", "images").strip(),
+        ap_mv_job_id=request.form.get("ap_mv_job_id", "").strip(),
+        music_job_id=request.form.get("music_job_id", "").strip(),
     )
 
     def render_error(error: str, status: int):
@@ -100,6 +103,9 @@ def post_form():
             audio_url=task.audio_url,
             keyframes_url=task.keyframes_url,
             subs_url=task.subs_url,
+            source_type=task.source_type,
+            ap_mv_job_id=task.ap_mv_job_id,
+            music_job_id=task.music_job_id,
         ), status
 
     try:

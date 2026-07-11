@@ -20,11 +20,17 @@ def new_job_id(prefix: str = "lyric") -> str:
 @dataclass
 class Task:
     job_id: str
-    audio_url: str
-    keyframes_url: str
+    audio_url: str = ""
+    keyframes_url: str = ""
     subs_url: str = ""
     whisper_model: str = "large-v3"
     output_prefix: str = ""
+    # source_type == "video" のとき、audio_url/keyframes_url の代わりに
+    # ap_mv_job_id/music_job_id からap-mv/ap-musicの成果物を直接参照する
+    # （静止画スライドショーではなく、Veo生成済みの実写動画を使う経路）。
+    source_type: str = "images"
+    ap_mv_job_id: str = ""
+    music_job_id: str = ""
     created_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
 
     def to_json(self) -> str:
@@ -43,6 +49,8 @@ class Task:
             errors.append(f"invalid job_id: {self.job_id!r}")
         if self.whisper_model not in {"large-v3", "medium", "small", "base"}:
             errors.append(f"invalid whisper_model: {self.whisper_model!r}")
+        if self.source_type not in {"images", "video"}:
+            errors.append(f"invalid source_type: {self.source_type!r}")
 
         def _check_gcs_uri(url: str, field: str, required: bool = True) -> None:
             if not url:
@@ -57,9 +65,22 @@ class Task:
             if url and allowed_bucket and not url.startswith(f"gs://{allowed_bucket}/"):
                 errors.append(f"{field} must be within bucket: {allowed_bucket}")
 
-        _check_gcs_uri(self.audio_url, "audio_url")
-        _check_gcs_uri(self.keyframes_url, "keyframes_url")
-        _check_gcs_uri(self.subs_url, "subs_url", required=False)
+        def _check_job_id_ref(value: str, field: str) -> None:
+            if not value:
+                errors.append(f"{field} is required")
+            elif not _JOB_ID_PATTERN.match(value):
+                errors.append(f"invalid {field}: {value!r}")
+
+        if self.source_type == "video":
+            _check_job_id_ref(self.ap_mv_job_id, "ap_mv_job_id")
+            _check_job_id_ref(self.music_job_id, "music_job_id")
+            # audio_url/keyframes_url/subs_url/whisper_modelはimagesモード専用で、
+            # videoモードでは video_merge.build() から一切参照されないため未検証のまま無視する。
+        else:
+            _check_gcs_uri(self.audio_url, "audio_url")
+            _check_gcs_uri(self.keyframes_url, "keyframes_url")
+            _check_gcs_uri(self.subs_url, "subs_url", required=False)
+
         _check_output_uri(self.output_prefix, "output_prefix")
         if errors:
             raise ValueError("; ".join(errors))
