@@ -24,11 +24,6 @@ _WHISPER_MODEL = "small"
 # 大きさ)をここで弾き、ffmpegに不正な-ss/-tをそのまま渡さないようにする。
 _MAX_PLAUSIBLE_SEC = 3600.0
 _ALIGN_SCRIPT = Path(__file__).resolve().parent / "align_subtitles.py"
-# ap-mv側のveoVideoExtensionDurationSec(internal/worker/filter/veo_cut_utils.go)と同じ値。
-# この尺のカットはvideo_extension(前カットへの継続)、それ以外はチェーンの新規ベース
-# (image_to_video、PreviousVideoIDなし)であることを示す規約。
-_VEO_EXTENSION_DURATION_SEC = 7.0
-_CROSSFADE_DURATION_SEC = 0.5
 
 
 def _safe_sec(value, field: str) -> float:
@@ -50,14 +45,12 @@ def build(
     ap_mv_bucket: str = "ap-mv",
     ap_music_bucket: str = "ap-music",
 ) -> Path:
-    """ap-mvの1セクション分の完成動画とap-musicの楽曲を合成し、字幕焼き込み済みMP4を作る。
+    """ap-mvの完成動画とap-musicの楽曲を合成し、字幕焼き込み済みMP4を作る。
 
-    ap-mvのVeo video-to-video継続生成では後続カットほど直前カットを含む累積動画になるが、
-    継続チェーンは video_extension の累積尺上限(30秒)を避けるため何度かリセットされ得る
-    （ap-mv側 internal/worker/filter/veo_cut_utils.go の veoContinuationMaxDurationSec）。
-    そのため「cut_indexが最大のカット」だけでは1つ目以降のチェーンが欠落するため、
-    _detect_chain_end_cuts でチェーンごとの完成版カットを検出し、複数あればクロスフェードで
-    つないだ1本の動画にする。
+    ap-mvのVeo video-to-video継続生成は video_extension の累積尺上限(30秒)を避けるため
+    継続チェーンを内部でリセットすることがあるが、複数チェーンの検出・結合（ハードカット）は
+    ap-mv側（internal/worker/filter/chain_finalize.go）で完結しており、この関数は
+    `final_video_url`（1本化済みの完成動画）をそのままダウンロードするだけでよい。
     """
     meta = gcs.load_json(f"gs://{ap_mv_bucket}/veo/jobs/{ap_mv_job_id}/video_music_meta.json")
     cuts = meta.get("cuts") or []
@@ -70,23 +63,16 @@ def build(
     # いる(omitemptyがfloat64を省略するのは値が0.0の場合のみ)ため、欠落時は0.0として扱う。
     section_start_sec = _safe_sec(cuts_sorted[0].get("start_sec", 0.0), "cuts[0].start_sec")
 
-    chain_end_cuts = _detect_chain_end_cuts(cuts_sorted)
-    chain_video_paths = []
-    for i, cut in enumerate(chain_end_cuts):
-        video_uri = cut.get("video_url")
-        if not video_uri:
-            raise ValueError(f"ap-mv job {ap_mv_job_id!r} chain-end cut {cut.get('cut_index')} has no video_url")
-        chain_path = work_dir / f"chain_{i:02d}.mp4"
-        logger.info("Downloading chain %d video from %s", i, video_uri)
-        gcs.download(video_uri, str(chain_path))
-        chain_video_paths.append(chain_path)
+    # final_video_urlが無いのは、ap-mv側のチェーン結合対応（final_video_url追加）より前に
+    # 生成された既存ジョブのみ。後方互換として、その場合は従来通り最後のcutの動画を使う
+    # （旧仕様では複数チェーンがあると欠落するが、これは新規ジョブでは発生しない）。
+    video_uri = meta.get("final_video_url") or cuts_sorted[-1].get("video_url")
+    if not video_uri:
+        raise ValueError(f"ap-mv job {ap_mv_job_id!r} has no final_video_url or video_url")
 
     video_path = work_dir / "section_video.mp4"
-    if len(chain_video_paths) == 1:
-        chain_video_paths[0].rename(video_path)
-    else:
-        logger.info("Concatenating %d chains with %.1fs crossfade", len(chain_video_paths), _CROSSFADE_DURATION_SEC)
-        _concat_with_crossfade(chain_video_paths, _CROSSFADE_DURATION_SEC, video_path)
+    logger.info("Downloading video from %s", video_uri)
+    gcs.download(video_uri, str(video_path))
 
     audio_uri = f"gs://{ap_music_bucket}/{music_job_id}.mp3"
     full_audio_path = work_dir / "full_song.mp3"
@@ -151,68 +137,6 @@ def build(
         "burn subtitles and mux",
     )
     return output_path
-
-
-def _detect_chain_end_cuts(cuts_sorted: list[dict]) -> list[dict]:
-    """継続チェーンの区切りを検出し、各チェーンの完成版カット(cut)のリストを返す。
-
-    cut.duration_secが_VEO_EXTENSION_DURATION_SEC(7秒)でないカットは、Veoのvideo_extension
-    累積尺上限を避けるための新規チェーンの起点(PreviousVideoIDなしのimage_to_video)を示す
-    （ap-mv側 internal/worker/filter/veo_cut_utils.go の expandCutsToSupportedDurations と
-    対になる規約）。起点の直前カットがそのチェーンの完成版(累積動画)。
-    """
-    end_cuts = []
-    for i, cut in enumerate(cuts_sorted):
-        duration = _safe_sec(cut.get("duration_sec"), "cuts[].duration_sec")
-        is_chain_start = i == 0 or abs(duration - _VEO_EXTENSION_DURATION_SEC) > 0.01
-        if is_chain_start and i > 0:
-            end_cuts.append(cuts_sorted[i - 1])
-    end_cuts.append(cuts_sorted[-1])
-    return end_cuts
-
-
-def _concat_with_crossfade(video_paths: list[Path], crossfade_sec: float, out_path: Path) -> None:
-    """複数の動画をクロスフェードで1本につなげる。
-
-    継続チェーンがリセットされた境目では、次のチェーンは前チェーンの動きの続きではなく
-    同じ開始キーフレームから改めて生成し直されるため、単純結合すると絵が巻き戻ったように
-    見える不自然なジャンプが生じる。短いクロスフェードでその境目を和らげる。
-    """
-    durations = [_probe_duration(p) for p in video_paths]
-
-    inputs: list[str] = []
-    for p in video_paths:
-        inputs.extend(["-i", str(p)])
-
-    filter_parts = []
-    last_label = "0:v"
-    cumulative = durations[0]
-    for i in range(1, len(video_paths)):
-        offset = max(0.0, cumulative - crossfade_sec)
-        out_label = f"xf{i}"
-        filter_parts.append(
-            f"[{last_label}][{i}:v]xfade=transition=fade:duration={crossfade_sec}:offset={offset}[{out_label}]"
-        )
-        cumulative = cumulative - crossfade_sec + durations[i]
-        last_label = out_label
-
-    _run(
-        [
-            "ffmpeg",
-            "-y",
-            "-v",
-            "error",
-            *inputs,
-            "-filter_complex",
-            ";".join(filter_parts),
-            "-map",
-            f"[{last_label}]",
-            "-c:v",
-            "libx264",
-            str(out_path),
-        ],
-        "concat chains with crossfade",
-    )
 
 
 def _escape_ffmpeg_filter_path(path: str) -> str:

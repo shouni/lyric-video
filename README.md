@@ -36,7 +36,7 @@ Cloud Run (同一サービス / worker エンドポイント)
   │   └─ GCS へアップロード → meta.json 更新 → Slack 通知
   │
   └─【素材の種類 = video】ap-mv動画 + ap-music楽曲の合成
-      ├─ ap-mvの完成動画（Veo生成。継続チェーンが複数ある場合は各チェーンをクロスフェードで結合）とap-musicの楽曲をダウンロード
+      ├─ ap-mvの完成動画（final_video_url、Veo生成）とap-musicの楽曲をダウンロード
       ├─ Whisperで実音声に強制アライメントしてカラオケ字幕を生成
       ├─ ffmpeg(libass)で動画に字幕を焼き込み・音声とmux
       └─ GCS へアップロード → meta.json 更新 → Slack 通知
@@ -185,7 +185,7 @@ gcloud builds submit --config=cloudbuild.yaml
 
 `video` モードでは、ap-mv の `cuts[].start_sec`/`end_sec` は演出上のカット割り当てであり実際の歌唱タイミングと一致しないため使用しない。必ず実音声を Whisper で強制アライメントしてタイミングを求める（`app/video_merge.py`）。
 
-ap-mv 側は Veo の video_extension（継続生成）が受け付けられる累積尺の上限（30秒）に達する手前で継続チェーンを自動的にリセットし、新しいベースカットから次のチェーンを始める（`internal/worker/filter/veo_cut_utils.go` の `veoContinuationMaxDurationSec`）。そのため1つの ap-mv Job に複数の継続チェーンが含まれることがあり、`video` モードでは各チェーンの完成版動画を `_detect_chain_end_cuts` で検出し、`_concat_with_crossfade`（`app/video_merge.py`）でクロスフェード結合してから音声・字幕と合成する。チェーンが1本だけの場合は従来通り単一動画として扱われる。
+ap-mv 側は Veo の video_extension（継続生成）が受け付けられる累積尺の上限（30秒）に達する手前で継続チェーンを自動的にリセットすることがあるが（`internal/worker/filter/veo_cut_utils.go` の `veoContinuationMaxDurationSec`）、複数チェーンの検出・フレーム引き継ぎ・ハードカット結合は ap-mv 側（`internal/worker/filter/chain_finalize.go`）で完結しており、結果は `video_music_meta.json` の `final_video_url` に1本化された完成動画として記録される。`video` モード（`app/video_merge.py`）はこの `final_video_url` をそのままダウンロードするだけで、チェーンの本数や境目を意識する必要はない（`final_video_url` が無い旧ジョブに対しては、後方互換として最後のカットの動画を使うフォールバックのみ持つ）。
 
 ---
 
