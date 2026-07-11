@@ -36,7 +36,7 @@ Cloud Run (同一サービス / worker エンドポイント)
   │   └─ GCS へアップロード → meta.json 更新 → Slack 通知
   │
   └─【素材の種類 = video】ap-mv動画 + ap-music楽曲の合成
-      ├─ ap-mvの完成動画（Veo生成、1セクション分）とap-musicの楽曲をダウンロード
+      ├─ ap-mvの完成動画（Veo生成。継続チェーンが複数ある場合は各チェーンをクロスフェードで結合）とap-musicの楽曲をダウンロード
       ├─ Whisperで実音声に強制アライメントしてカラオケ字幕を生成
       ├─ ffmpeg(libass)で動画に字幕を焼き込み・音声とmux
       └─ GCS へアップロード → meta.json 更新 → Slack 通知
@@ -181,9 +181,11 @@ gcloud builds submit --config=cloudbuild.yaml
 | `source_type` | 素材 | 説明 |
 |---|---|---|
 | `images`（デフォルト） | ap-mv の `keyframes.zip`（静止画） + ap-music の楽曲 | 既存の静止画スライドショー方式。`subs_url`（省略可）・`whisper_model` を追加指定できる |
-| `video` | ap-mv の完成動画（Veo生成、1セクション分） + ap-music の楽曲 | Veo で生成済みの実写アニメーション動画に、Whisper で実音声へ強制アライメントしたカラオケ字幕を焼き込む。`video`モードでは1回の生成は曲の1セクション分（例: Aメロ、サビ等）が対象で、曲全体を通しで作るには非対応 |
+| `video` | ap-mv の完成動画（Veo生成） + ap-music の楽曲 | Veo で生成済みの実写アニメーション動画に、Whisper で実音声へ強制アライメントしたカラオケ字幕を焼き込む。指定した ap-mv Job ID に含まれるカット全体が対象になるため、1セクション分のジョブでも曲全体を通しで作るジョブでも同じ仕組みで扱える |
 
 `video` モードでは、ap-mv の `cuts[].start_sec`/`end_sec` は演出上のカット割り当てであり実際の歌唱タイミングと一致しないため使用しない。必ず実音声を Whisper で強制アライメントしてタイミングを求める（`app/video_merge.py`）。
+
+ap-mv 側は Veo の video_extension（継続生成）が受け付けられる累積尺の上限（30秒）に達する手前で継続チェーンを自動的にリセットし、新しいベースカットから次のチェーンを始める（`internal/worker/filter/veo_cut_utils.go` の `veoContinuationMaxDurationSec`）。そのため1つの ap-mv Job に複数の継続チェーンが含まれることがあり、`video` モードでは各チェーンの完成版動画を `_detect_chain_end_cuts` で検出し、`_concat_with_crossfade`（`app/video_merge.py`）でクロスフェード結合してから音声・字幕と合成する。チェーンが1本だけの場合は従来通り単一動画として扱われる。
 
 ---
 
