@@ -43,6 +43,13 @@ def _fetch_recipe(audio_url: str) -> dict:
         return {}
 
 
+def _fetch_recipe_for_task(task: Task) -> dict:
+    """タスクのsource_typeに応じて、YouTube投稿フォーム補助用のレシピ情報を取得する。"""
+    if task.source_type == "video" and task.music_job_id:
+        return _fetch_recipe(f"gs://ap-music/{task.music_job_id}.mp3")
+    return _fetch_recipe(task.audio_url)
+
+
 def _prepare_thumbnail(image_bytes: bytes) -> BytesIO:
     """YouTubeサムネイルの上限(2MB)に収まるようJPEGへ再エンコードする。
 
@@ -78,7 +85,7 @@ def process_task():
         logger.error("Invalid task payload: %s", exc)
         return jsonify({"error": str(exc)}), 400
 
-    recipe = _fetch_recipe(task.audio_url)
+    recipe = _fetch_recipe_for_task(task)
     meta_uri = f"{task.output_prefix.rstrip('/')}/{task.job_id}/meta.json" if task.output_prefix else None
     _update_meta(
         meta_uri,
@@ -91,6 +98,9 @@ def process_task():
             "whisper_model": task.whisper_model,
             "output_prefix": task.output_prefix,
             "created_at": task.created_at,
+            "source_type": task.source_type,
+            "ap_mv_job_id": task.ap_mv_job_id,
+            "music_job_id": task.music_job_id,
             "theme": recipe.get("theme", ""),
             "title": recipe.get("title", ""),
             "hook": (recipe.get("lyrics") or {}).get("hook", ""),

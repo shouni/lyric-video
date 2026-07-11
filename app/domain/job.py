@@ -20,6 +20,9 @@ class JobRecord:
     output_prefix: str = ""
     output_uri: str = ""
     error: str = ""
+    source_type: str = "images"
+    ap_mv_job_id: str = ""
+    music_job_id: str = ""
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -40,4 +43,7 @@ class JobRecord:
             subs_url=task.subs_url,
             whisper_model=task.whisper_model,
             output_prefix=task.output_prefix,
+            source_type=task.source_type,
+            ap_mv_job_id=task.ap_mv_job_id,
+            music_job_id=task.music_job_id,
         )

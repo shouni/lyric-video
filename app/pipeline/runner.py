@@ -7,6 +7,7 @@ import tempfile
 import threading
 from pathlib import Path
 
+from app import video_merge
 from app.adapters import gcs
 from app.domain.task import Task
 
@@ -19,6 +20,24 @@ _SCRIPTS_DIR = Path(__file__).resolve().parent.parent
 class PipelineRunner:
     def run(self, task: Task) -> str:
         """入力素材を取得し、字幕生成・焼き込み・アップロードまでの全工程を実行する。"""
+        if task.source_type == "video":
+            return self._run_video_merge(task)
+        return self._run_image_slideshow(task)
+
+    def _run_video_merge(self, task: Task) -> str:
+        """ap-mvの完成動画とap-musicの楽曲を合成する経路(静止画スライドショーを使わない)。"""
+        with tempfile.TemporaryDirectory(prefix="lyric_video_merge_") as work_dir:
+            work = Path(work_dir)
+            output_path = work / "output.mp4"
+            video_merge.build(task.ap_mv_job_id, task.music_job_id, work, output_path)
+
+            output_uri = f"{task.output_prefix.rstrip('/')}/{task.job_id}/output.mp4"
+            logger.info("Uploading output to %s", output_uri)
+            gcs.upload(str(output_path), output_uri)
+            return output_uri
+
+    def _run_image_slideshow(self, task: Task) -> str:
+        """静止画キーフレーム+カラオケ字幕焼き込みでMVを生成する既存経路。"""
         with tempfile.TemporaryDirectory(prefix="lyric_video_") as work_dir:
             work = Path(work_dir)
 
