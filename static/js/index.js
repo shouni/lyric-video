@@ -14,26 +14,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const sourceType = document.getElementById('source_type');
     const imagesFields = document.getElementById('images_fields');
-    const videoFields = document.getElementById('video_fields');
 
     function syncSourceType() {
-        if (!sourceType || !imagesFields || !videoFields) return;
+        if (!sourceType || !imagesFields) return;
         const isVideo = sourceType.value === 'video';
 
         imagesFields.style.display = isVideo ? 'none' : '';
-        videoFields.style.display = isVideo ? '' : 'none';
 
-        // disabledな入力欄はフォーム送信対象から除外されるため、非表示側の値が
-        // 誤って送信されるのを防ぐ（サーバー側バリデーションの混乱を避ける）。
+        // disabledな入力欄はフォーム送信対象から除外されるため、videoモード選択時に
+        // images専用欄(subs_url/whisper_model)の値が誤って送信されるのを防ぐ。
         imagesFields.querySelectorAll('input, select').forEach((el) => {
             el.disabled = isVideo;
         });
-        videoFields.querySelectorAll('input, select').forEach((el) => {
-            el.disabled = !isVideo;
-        });
     }
 
-    if (sourceType && imagesFields && videoFields) {
+    if (sourceType && imagesFields) {
         sourceType.addEventListener('change', syncSourceType);
         syncSourceType();
     }

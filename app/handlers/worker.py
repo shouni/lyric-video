@@ -43,11 +43,11 @@ def _fetch_recipe(audio_url: str) -> dict:
         return {}
 
 
-def _fetch_recipe_for_task(task: Task) -> dict:
-    """タスクのsource_typeに応じて、YouTube投稿フォーム補助用のレシピ情報を取得する。"""
-    if task.source_type == "video" and task.music_job_id:
-        return _fetch_recipe(f"gs://ap-music/{task.music_job_id}.mp3")
-    return _fetch_recipe(task.audio_url)
+def _fetch_recipe_for_task(task: Task, ap_music_bucket: str) -> dict:
+    """タスクのmusic_job_idから、YouTube投稿フォーム補助用のレシピ情報を取得する。"""
+    if not task.music_job_id:
+        return {}
+    return _fetch_recipe(f"gs://{ap_music_bucket}/{task.music_job_id}.mp3")
 
 
 def _prepare_thumbnail(image_bytes: bytes) -> BytesIO:
@@ -85,15 +85,13 @@ def process_task():
         logger.error("Invalid task payload: %s", exc)
         return jsonify({"error": str(exc)}), 400
 
-    recipe = _fetch_recipe_for_task(task)
+    recipe = _fetch_recipe_for_task(task, cfg.ap_music_bucket)
     meta_uri = f"{task.output_prefix.rstrip('/')}/{task.job_id}/meta.json" if task.output_prefix else None
     _update_meta(
         meta_uri,
         {
             "status": "running",
             "job_id": task.job_id,
-            "audio_url": task.audio_url,
-            "keyframes_url": task.keyframes_url,
             "subs_url": task.subs_url,
             "whisper_model": task.whisper_model,
             "output_prefix": task.output_prefix,

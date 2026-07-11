@@ -82,14 +82,12 @@ def post_form():
     job_id = new_job_id("lyric")
     task = Task(
         job_id=job_id,
-        audio_url=request.form.get("audio_url", "").strip(),
-        keyframes_url=request.form.get("keyframes_url", "").strip(),
+        ap_mv_job_id=request.form.get("ap_mv_job_id", "").strip(),
+        music_job_id=request.form.get("music_job_id", "").strip(),
         subs_url=request.form.get("subs_url", "").strip(),
         whisper_model=request.form.get("whisper_model", "large-v3"),
         output_prefix=output_prefix,
         source_type=request.form.get("source_type", "images").strip(),
-        ap_mv_job_id=request.form.get("ap_mv_job_id", "").strip(),
-        music_job_id=request.form.get("music_job_id", "").strip(),
     )
 
     def render_error(error: str, status: int):
@@ -100,8 +98,6 @@ def post_form():
             error=error,
             whisper_model=task.whisper_model,
             csrf_token=session.get("csrf_token"),
-            audio_url=task.audio_url,
-            keyframes_url=task.keyframes_url,
             subs_url=task.subs_url,
             source_type=task.source_type,
             ap_mv_job_id=task.ap_mv_job_id,

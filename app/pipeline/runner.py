@@ -49,16 +49,19 @@ class PipelineRunner:
 
     def _run_image_slideshow(self, task: Task) -> str:
         """静止画キーフレーム+カラオケ字幕焼き込みでMVを生成する既存経路。"""
+        audio_url = f"gs://{self._ap_music_bucket}/{task.music_job_id}.mp3"
+        keyframes_url = f"gs://{self._ap_mv_bucket}/veo/jobs/{task.ap_mv_job_id}/keyframes.zip"
+
         with tempfile.TemporaryDirectory(prefix="lyric_video_") as work_dir:
             work = Path(work_dir)
 
-            logger.info("Downloading audio from %s", task.audio_url)
+            logger.info("Downloading audio from %s", audio_url)
             audio_path = str(work / "audio.mp3")
-            gcs.download(task.audio_url, audio_path)
+            gcs.download(audio_url, audio_path)
 
-            logger.info("Downloading keyframes from %s", task.keyframes_url)
+            logger.info("Downloading keyframes from %s", keyframes_url)
             keyframes_path = str(work / "keyframes.zip")
-            gcs.download(task.keyframes_url, keyframes_path)
+            gcs.download(keyframes_url, keyframes_path)
 
             if task.subs_url:
                 ass_path = str(work / "subtitles.ass")
