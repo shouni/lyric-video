@@ -205,7 +205,7 @@
             <tr><th class="text-muted">作成日時</th><td>{{ job.created_at[:19].replace('T', ' ') if job.created_at else '—' }}</td></tr>
             <tr><th class="text-muted">ステータス</th><td>{{ job.status }}</td></tr>
             <tr><th class="text-muted">素材の種類</th><td>{{ job.source_type or 'images' }}</td></tr>
-            <tr><th class="text-muted">ap-mv Job ID</th><td class="text-break small font-monospace">{{ job.ap_mv_job_id }}</td></tr>
+            <tr><th class="text-muted">MV Job ID</th><td class="text-break small font-monospace">{{ job.ap_mv_job_id }}</td></tr>
             <tr><th class="text-muted">Music Job ID</th><td class="text-break small font-monospace">{{ job.music_job_id }}</td></tr>
             {% if job.source_type != 'video' %}
             <tr><th class="text-muted">Whisper モデル</th><td>{{ job.whisper_model or '—' }}</td></tr>
