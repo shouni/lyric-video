@@ -18,7 +18,7 @@
 
 ```
 ブラウザ（Google OAuth2 認証済み）
-  │  /new フォームで ap-mv Job ID / Music Job ID（+ 素材の種類）を入力
+  │  /new フォームで MV Job ID / Music Job ID（+ 素材の種類）を入力
   ▼
 Cloud Run (Flask)
   │  job_id を生成 → meta.json を GCS へ保存 → キューに投入
@@ -176,12 +176,12 @@ gcloud builds submit --config=cloudbuild.yaml
 
 ## 🎬 素材の種類（`source_type`）
 
-`/new` フォームでは、生成する MV の素材を2種類から選べます。どちらも入力は共通で **ap-mv Job ID** と **Music Job ID** の2つだけです（GCS URL を直接入力する必要はありません。パスは `AP_MV_BUCKET` / `AP_MUSIC_BUCKET` から自動的に組み立てられます）。
+`/new` フォームでは、生成する MV の素材を2種類から選べます。どちらも入力は共通で **MV Job ID** と **Music Job ID** の2つだけです（GCS URL を直接入力する必要はありません。パスは `AP_MV_BUCKET` / `AP_MUSIC_BUCKET` から自動的に組み立てられます）。
 
 | `source_type` | 素材 | 説明 |
 |---|---|---|
 | `images`（デフォルト） | ap-mv の `keyframes.zip`（静止画） + ap-music の楽曲 | 既存の静止画スライドショー方式。`subs_url`（省略可）・`whisper_model` を追加指定できる |
-| `video` | ap-mv の完成動画（Veo生成） + ap-music の楽曲 | Veo で生成済みの実写アニメーション動画に、Whisper で実音声へ強制アライメントしたカラオケ字幕を焼き込む。指定した ap-mv Job ID に含まれるカット全体が対象になるため、1セクション分のジョブでも曲全体を通しで作るジョブでも同じ仕組みで扱える |
+| `video` | ap-mv の完成動画（Veo生成） + ap-music の楽曲 | Veo で生成済みの実写アニメーション動画に、Whisper で実音声へ強制アライメントしたカラオケ字幕を焼き込む。指定した MV Job ID に含まれるカット全体が対象になるため、1セクション分のジョブでも曲全体を通しで作るジョブでも同じ仕組みで扱える |
 
 `video` モードでは、ap-mv の `cuts[].start_sec`/`end_sec` は演出上のカット割り当てであり実際の歌唱タイミングと一致しないため使用しない。必ず実音声を Whisper で強制アライメントしてタイミングを求める（`app/video_merge.py`）。
 
