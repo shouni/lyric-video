@@ -12,24 +12,26 @@ document.addEventListener('DOMContentLoaded', () => {
         syncWhisper();
     }
 
-    const sourceType = document.getElementById('source_type');
-    const imagesFields = document.getElementById('images_fields');
+    const sourceTypeInput = document.getElementById('source_type');
+    const sourceTypeTabs = document.querySelectorAll('#source_type_tabs [data-source-type]');
+    const imagesPane = document.getElementById('images-pane');
 
-    function syncSourceType() {
-        if (!sourceType || !imagesFields) return;
-        const isVideo = sourceType.value === 'video';
+    function syncSourceType(tabEl) {
+        if (!sourceTypeInput || !imagesPane) return;
+        const value = tabEl.dataset.sourceType;
+        sourceTypeInput.value = value;
 
-        imagesFields.style.display = isVideo ? 'none' : '';
-
-        // disabledな入力欄はフォーム送信対象から除外されるため、videoモード選択時に
-        // images専用欄(subs_url/whisper_model)の値が誤って送信されるのを防ぐ。
-        imagesFields.querySelectorAll('input, select').forEach((el) => {
-            el.disabled = isVideo;
+        // disabledな入力欄はフォーム送信対象から除外されるため、動画タブ選択時に
+        // 静止画専用欄(subs_url/whisper_model)の値が誤って送信されるのを防ぐ。
+        imagesPane.querySelectorAll('input, select').forEach((el) => {
+            el.disabled = value !== 'images';
         });
     }
 
-    if (sourceType && imagesFields) {
-        sourceType.addEventListener('change', syncSourceType);
-        syncSourceType();
-    }
+    sourceTypeTabs.forEach((tabEl) => {
+        tabEl.addEventListener('shown.bs.tab', () => syncSourceType(tabEl));
+        if (tabEl.classList.contains('active')) {
+            syncSourceType(tabEl);
+        }
+    });
 });
