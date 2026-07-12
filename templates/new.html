@@ -1,11 +1,11 @@
 {% extends "layout.html" %}
 
-{% block title %}新規作成 — Lyric Video{% endblock %}
+{% block title %}New — Lyric Video{% endblock %}
 
 {% block content %}
 <div class="row justify-content-center">
   <div class="col-12 col-md-8 col-lg-6">
-    <h2 class="mb-4"><i class="bi bi-film me-2"></i>新規作成</h2>
+    <h2 class="mb-4"><i class="bi bi-film me-2"></i>New</h2>
 
     {% if error %}
     <div class="alert alert-danger">{{ error }}</div>
@@ -15,15 +15,6 @@
       <div class="card-body p-4">
         <form method="post" action="/new">
           <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-
-          <div class="mb-3">
-            <label class="form-label fw-semibold">素材の種類</label>
-            <select class="form-select" name="source_type" id="source_type">
-              <option value="images" {% if source_type == 'images' %}selected{% endif %}>静止画キーフレーム + 音声(スライドショー)</option>
-              <option value="video" {% if (source_type or 'video') == 'video' %}selected{% endif %}>ap-mv 動画 + ap-music 楽曲</option>
-            </select>
-            <div class="form-text">「ap-mv 動画」は Veo で生成した実写動画に、曲を合わせて字幕を焼き込みます</div>
-          </div>
 
           <div class="mb-3">
             <label class="form-label fw-semibold">MV Job ID</label>
@@ -41,26 +32,51 @@
             <div class="form-text">gs://&lt;AP_MUSIC_BUCKET&gt;/&lt;job_id&gt;.mp3 を参照します</div>
           </div>
 
-          <div id="images_fields">
-            <div class="mb-3">
-              <label class="form-label fw-semibold">
-                Pre-aligned ASS GCS URL
-                <span class="text-muted fw-normal">(省略可)</span>
-              </label>
-              <input type="text" class="form-control" name="subs_url" id="subs_url"
-                     placeholder="gs://bucket/path/to/subtitles_aligned.ass"
-                     value="{{ subs_url or '' }}">
-              <div class="form-text">省略するとWhisperでタイミング自動生成</div>
-            </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">素材の種類</label>
+            <input type="hidden" name="source_type" id="source_type" value="{% if source_type == 'images' %}images{% else %}video{% endif %}">
+            <ul class="nav nav-tabs" id="source_type_tabs" role="tablist">
+              <li class="nav-item" role="presentation">
+                <button class="nav-link {% if source_type != 'images' %}active{% endif %}" id="video-tab" type="button"
+                        data-bs-toggle="tab" data-bs-target="#video-pane" data-source-type="video"
+                        role="tab" aria-controls="video-pane" aria-selected="{% if source_type != 'images' %}true{% else %}false{% endif %}">
+                  <i class="bi bi-camera-reels me-1"></i>動画
+                </button>
+              </li>
+              <li class="nav-item" role="presentation">
+                <button class="nav-link {% if source_type == 'images' %}active{% endif %}" id="images-tab" type="button"
+                        data-bs-toggle="tab" data-bs-target="#images-pane" data-source-type="images"
+                        role="tab" aria-controls="images-pane" aria-selected="{% if source_type == 'images' %}true{% else %}false{% endif %}">
+                  <i class="bi bi-images me-1"></i>静止画
+                </button>
+              </li>
+            </ul>
+            <div class="tab-content border border-top-0 rounded-bottom p-3" id="source_type_tab_content">
+              <div class="tab-pane fade {% if source_type != 'images' %}show active{% endif %}" id="video-pane" role="tabpanel" aria-labelledby="video-tab">
+                <p class="small text-muted mb-0">Veo で生成した実写動画に曲を合わせて字幕を焼き込みます。追加の入力はありません。</p>
+              </div>
+              <div class="tab-pane fade {% if source_type == 'images' %}show active{% endif %}" id="images-pane" role="tabpanel" aria-labelledby="images-tab">
+                <div class="mb-3">
+                  <label class="form-label fw-semibold">
+                    Pre-aligned ASS GCS URL
+                    <span class="text-muted fw-normal">(省略可)</span>
+                  </label>
+                  <input type="text" class="form-control" name="subs_url" id="subs_url"
+                         placeholder="gs://bucket/path/to/subtitles_aligned.ass"
+                         value="{{ subs_url or '' }}">
+                  <div class="form-text">省略するとWhisperでタイミング自動生成</div>
+                </div>
 
-            <div class="mb-3" id="whisper_field">
-              <label class="form-label fw-semibold">Whisper モデル</label>
-              <select class="form-select" name="whisper_model">
-                <option value="large-v3" {% if whisper_model == 'large-v3' %}selected{% endif %}>large-v3（高精度・低速）</option>
-                <option value="medium"   {% if whisper_model == 'medium'   %}selected{% endif %}>medium</option>
-                <option value="small"    {% if whisper_model == 'small'    %}selected{% endif %}>small</option>
-                <option value="base"     {% if whisper_model == 'base'     %}selected{% endif %}>base（低精度・高速）</option>
-              </select>
+                <div class="mb-3" id="whisper_field">
+                  <label class="form-label fw-semibold">Whisper モデル</label>
+                  <select class="form-select" name="whisper_model">
+                    <option value="large-v3" {% if whisper_model == 'large-v3' %}selected{% endif %}>large-v3（高精度・低速）</option>
+                    <option value="medium"   {% if whisper_model == 'medium'   %}selected{% endif %}>medium</option>
+                    <option value="small"    {% if whisper_model == 'small'    %}selected{% endif %}>small</option>
+                    <option value="base"     {% if whisper_model == 'base'     %}selected{% endif %}>base（低精度・高速）</option>
+                  </select>
+                </div>
+              </div>
             </div>
           </div>
 
