@@ -10,36 +10,26 @@ substitutions:
 
 steps:
   - name: 'gcr.io/cloud-builders/docker'
-    id: 'Pull Cache Image'
-    entrypoint: 'bash'
-    args:
-      - '-c'
-      - |
-        docker pull ${_IMAGE_BASE}/${PROJECT_ID}/${_REPO_PATH}:${_CACHE_TAG} || exit 0
+    id: 'Setup Buildx'
+    args: ['buildx', 'create', '--driver', 'docker-container', '--name', 'builder', '--use']
 
   - name: 'gcr.io/cloud-builders/docker'
     id: 'Build Container Image'
-    env:
-      - 'DOCKER_BUILDKIT=1'
     args:
+      - 'buildx'
       - 'build'
       - '-t'
       - '${_IMAGE_BASE}/${PROJECT_ID}/${_REPO_PATH}:${_TAG}'
       - '-t'
       - '${_IMAGE_BASE}/${PROJECT_ID}/${_REPO_PATH}:${_CACHE_TAG}'
       - '--cache-from'
-      - '${_IMAGE_BASE}/${PROJECT_ID}/${_REPO_PATH}:${_CACHE_TAG}'
-      - '--build-arg'
-      - 'BUILDKIT_INLINE_CACHE=1'
+      - 'type=registry,ref=${_IMAGE_BASE}/${PROJECT_ID}/${_REPO_PATH}:buildcache'
       - '--build-arg'
       - 'WHISPER_MODEL=${_WHISPER_MODEL}'
+      - '--cache-to'
+      - 'type=registry,ref=${_IMAGE_BASE}/${PROJECT_ID}/${_REPO_PATH}:buildcache,mode=max'
+      - '--push'
       - '.'
-
-  - name: 'gcr.io/cloud-builders/docker'
-    id: 'Push Image'
-    args:
-      - 'push'
-      - '${_IMAGE_BASE}/${PROJECT_ID}/${_REPO_PATH}:${_TAG}'
 
   - name: 'gcr.io/cloud-builders/gcloud'
     id: 'Deploy to Cloud Run'
@@ -59,12 +49,6 @@ steps:
       - '--concurrency=1'
       - '--update-env-vars'
       - 'GCP_PROJECT_ID=${PROJECT_ID},GCP_LOCATION_ID=${_REGION},WHISPER_MODEL=${_WHISPER_MODEL}'
-
-  - name: 'gcr.io/cloud-builders/docker'
-    id: 'Push Cache Image'
-    args:
-      - 'push'
-      - '${_IMAGE_BASE}/${PROJECT_ID}/${_REPO_PATH}:${_CACHE_TAG}'
 
 options:
   machineType: 'E2_HIGHCPU_8'
