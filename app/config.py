@@ -18,6 +18,9 @@ class Config:
     gcs_output_prefix: str
     slack_webhook_url: str
     whisper_model: str
+    # video合成モードのWhisperモデル。曲全体を1本で強制アライメントするため、
+    # Cloud Runのメモリと処理時間に収まる小さめのモデルを既定にしている。
+    video_whisper_model: str
     # video合成モード(source_type=video)でap-mv/ap-musicの成果物を参照するバケット名
     ap_mv_bucket: str
     ap_music_bucket: str
@@ -61,6 +64,7 @@ class Config:
             gcs_output_prefix=os.getenv("GCS_OUTPUT_PREFIX", "lyric-video/output"),
             slack_webhook_url=os.getenv("SLACK_WEBHOOK_URL", ""),
             whisper_model=os.getenv("WHISPER_MODEL", "large-v3"),
+            video_whisper_model=os.getenv("VIDEO_WHISPER_MODEL", "small"),
             ap_mv_bucket=os.getenv("AP_MV_BUCKET", "ap-mv"),
             ap_music_bucket=os.getenv("AP_MUSIC_BUCKET", "ap-music"),
             google_client_id=os.getenv("GOOGLE_CLIENT_ID", ""),

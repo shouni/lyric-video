@@ -139,6 +139,7 @@ def get_base_img(path, img_cache):
 
 LINE_MAX_WIDTH_RATIO = 0.92  # 1行が占めてよい画像幅の上限比率
 LINE_SHRINK_FLOOR = 0.7  # 1行のまま縮小してよい下限比。これ未満に縮むなら2行に折り返す
+MIN_FONT_SIZE = 12  # 自動縮小の下限（これ以上小さくすると判読できない）
 
 
 def measure_line(draw, text, font):
@@ -147,16 +148,19 @@ def measure_line(draw, text, font):
 
 
 def shrink_to_fit(draw, lines, font, max_w):
-    """指定した行群が max_w に収まるまでフォントを縮小する。"""
-    base_size = getattr(font, "size", 0) or 0
-    size = base_size
-    f = font
-    while size > 12:
+    """指定した行群が max_w に収まるまでフォントを縮小する。
+
+    MIN_FONT_SIZE まで縮めても収まらない場合はそのサイズで諦める（読めない字幕を出すより
+    はみ出しを許容する）。返り値のフォントとサイズは常に一致する。
+    """
+    size = getattr(font, "size", 0) or 0
+    if size <= MIN_FONT_SIZE:
+        return font, size
+    while True:
         f = font.font_variant(size=size)
-        if all(measure_line(draw, ln, f) <= max_w for ln in lines):
-            break
+        if size <= MIN_FONT_SIZE or all(measure_line(draw, ln, f) <= max_w for ln in lines):
+            return f, size
         size -= 2
-    return f, size
 
 
 def best_split_segs(draw, segs, font):

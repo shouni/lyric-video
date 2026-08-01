@@ -76,7 +76,8 @@ Cloud Run (同一サービス / worker エンドポイント)
 | `SLACK_WEBHOOK_URL` | ➖ | Slack Incoming Webhook URL |
 | `GCP_LOCATION_ID` | ➖ | リージョン（省略時: `asia-northeast1`） |
 | `GCS_OUTPUT_PREFIX` | ➖ | 出力先パスプレフィックス（省略時: `lyric-video/output`） |
-| `WHISPER_MODEL` | ➖ | Whisper モデルサイズ（省略時: `large-v3`） |
+| `WHISPER_MODEL` | ➖ | Whisper モデルサイズ（省略時: `large-v3`）。`/new` フォームの初期値に使われる（`images` モード） |
+| `VIDEO_WHISPER_MODEL` | ➖ | `video` モードのアライメントに使う Whisper モデル（省略時: `small`）。曲全体を1本で強制アライメントするため、Cloud Run のメモリ・処理時間に収まる小さめのモデルを既定にしている |
 | `AP_MV_BUCKET` | ➖ | ap-mvの成果物（keyframes.zip / 完成動画・歌詞タイミング）を参照するGCSバケット名。images/video両モードで使用（省略時: `ap-mv`） |
 | `AP_MUSIC_BUCKET` | ➖ | ap-musicの楽曲(mp3)を参照するGCSバケット名。images/video両モードで使用（省略時: `ap-music`） |
 | `ALLOWED_EMAILS` | ➖ | アクセス許可メールアドレス（カンマ区切り）`ALLOWED_DOMAINS` との**どちらか必須** |
@@ -249,6 +250,19 @@ Dialogue: 0,0:00:17.00,0:00:22.00,Karaoke,,0,0,0,,2行目の歌詞
 | [google-cloud-tasks](https://cloud.google.com/tasks) | 非同期タスクキュー |
 | [google-cloud-storage](https://cloud.google.com/storage) | GCS ファイル入出力 |
 | [google-api-python-client](https://github.com/googleapis/google-api-python-client) | YouTube Data API v3 |
+
+---
+
+## 🧪 開発・テスト
+
+```sh
+pip install -r requirements-dev.txt
+
+ruff check . && ruff format --check .
+SESSION_SECRET=dummy pytest -q
+```
+
+テストは外部サービス（GCS / Cloud Tasks / YouTube / Whisper / ffmpeg）へ接続しません。ドメインモデル・設定・OIDC 検証・`meta.json` の読み書き・字幕の折り返しといった純粋ロジックと、Flask テストクライアントによる認証まわりの配線確認を対象にしています。CI（`.github/workflows/ci.yml`）でも同じコマンドが実行されます。
 
 ---
 

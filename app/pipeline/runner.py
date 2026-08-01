@@ -5,6 +5,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+from collections import deque
 from pathlib import Path
 
 from app import video_merge
@@ -15,12 +16,20 @@ logger = logging.getLogger(__name__)
 
 # app/ directory where align_subtitles.py and burn_subs.py live
 _SCRIPTS_DIR = Path(__file__).resolve().parent.parent
+# 失敗時に例外メッセージへ含める標準エラーの行数
+_STDERR_TAIL_LINES = 5
 
 
 class PipelineRunner:
-    def __init__(self, ap_mv_bucket: str = "ap-mv", ap_music_bucket: str = "ap-music") -> None:
+    def __init__(
+        self,
+        ap_mv_bucket: str = "ap-mv",
+        ap_music_bucket: str = "ap-music",
+        video_whisper_model: str = video_merge.DEFAULT_WHISPER_MODEL,
+    ) -> None:
         self._ap_mv_bucket = ap_mv_bucket
         self._ap_music_bucket = ap_music_bucket
+        self._video_whisper_model = video_whisper_model
 
     def run(self, task: Task) -> str:
         """入力素材を取得し、字幕生成・焼き込み・アップロードまでの全工程を実行する。"""
@@ -40,6 +49,7 @@ class PipelineRunner:
                 output_path,
                 ap_mv_bucket=self._ap_mv_bucket,
                 ap_music_bucket=self._ap_music_bucket,
+                whisper_model=self._video_whisper_model,
             )
 
             output_uri = f"{task.output_prefix.rstrip('/')}/{task.job_id}/output.mp4"
@@ -99,21 +109,32 @@ class PipelineRunner:
         _run_subprocess(cmd, "burn_subs")
 
 
-def _stream(pipe, log_fn):
+def _stream(pipe, log_fn, sink: deque | None = None):
     """サブプロセスの出力を1行ずつ指定されたログ関数へ流す。"""
     for line in iter(pipe.readline, ""):
-        log_fn(line.rstrip())
+        line = line.rstrip()
+        log_fn(line)
+        if sink is not None and line:
+            sink.append(line)
 
 
 def _run_subprocess(cmd: list[str], name: str) -> None:
-    """サブプロセスを実行し、標準出力と標準エラーをログへ転送する。"""
+    """サブプロセスを実行し、標準出力と標準エラーをログへ転送する。
+
+    失敗時は終了コードだけでなく標準エラーの末尾も例外メッセージへ含める。この文言は
+    meta.json の error とSlack通知にそのまま出るため、ログを見に行かずに
+    「歌詞とWhisperの文字数が一致しない」等の原因が分かるようにする。
+    """
+    stderr_tail: deque[str] = deque(maxlen=_STDERR_TAIL_LINES)
     with subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True) as proc:
         t_out = threading.Thread(target=_stream, args=(proc.stdout, logger.info))
-        t_err = threading.Thread(target=_stream, args=(proc.stderr, logger.warning))
+        t_err = threading.Thread(target=_stream, args=(proc.stderr, logger.warning, stderr_tail))
         t_out.start()
         t_err.start()
         proc.wait()
         t_out.join()
         t_err.join()
         if proc.returncode != 0:
-            raise RuntimeError(f"{name} failed with exit code {proc.returncode}")
+            detail = " / ".join(stderr_tail)
+            message = f"{name} failed with exit code {proc.returncode}"
+            raise RuntimeError(f"{message}: {detail}" if detail else message)

@@ -2,13 +2,12 @@ from __future__ import annotations
 
 import logging
 import secrets
-import threading
 from dataclasses import asdict
 
 from flask import Blueprint, abort, current_app, g, render_template, request, session
 from googleapiclient.errors import HttpError
 
-from app.adapters import gcs
+from app.adapters import gcs, job_store
 from app.adapters.youtube import extract_video_id
 from app.domain.job import JobRecord
 from app.domain.task import Task, new_job_id
@@ -85,7 +84,7 @@ def post_form():
         ap_mv_job_id=request.form.get("ap_mv_job_id", "").strip(),
         music_job_id=request.form.get("music_job_id", "").strip(),
         subs_url=request.form.get("subs_url", "").strip(),
-        whisper_model=request.form.get("whisper_model", "large-v3"),
+        whisper_model=request.form.get("whisper_model") or cfg.whisper_model,
         output_prefix=output_prefix,
         source_type=request.form.get("source_type", "images").strip(),
     )
@@ -113,13 +112,20 @@ def post_form():
         logger.error("Cloud Tasks queue is not configured job_id=%s", job_id)
         return render_error("システムエラー: Cloud Tasks キューが構成されていないため、タスクを実行できません。", 501)
 
+    # meta.json はキュー投入より先に、同期で保存する。Cloud Run はレスポンス返却後に
+    # CPU が絞られる（インスタンスが停止し得る）ため、バックグラウンドスレッドでの保存は
+    # 取りこぼしが起き、ジョブ一覧に queued のジョブが出てこないことがある。
+    _save_job_meta(JobRecord.from_task(task))
+
     try:
         queue.enqueue(asdict(task))
     except Exception as exc:
         logger.error("Failed to enqueue task job_id=%s: %s", job_id, exc)
+        job_store.update(
+            job_store.meta_uri(task.output_prefix, job_id),
+            {"status": "failed", "error": f"Failed to enqueue task: {exc}"},
+        )
         return render_error(f"タスクのキュー追加に失敗しました: {exc}", 502)
-
-    threading.Thread(target=_save_job_meta, args=(JobRecord.from_task(task),), daemon=True).start()
 
     if _wants_json():
         return {"status": "queued", "job_id": job_id}, 202
@@ -163,10 +169,9 @@ def publish_youtube(job_id: str):
     if queue is None:
         return _fail(501, "Cloud Tasks queue is not configured")
 
-    output_prefix = cfg.default_output_prefix()
-    meta_uri = f"{output_prefix.rstrip('/')}/{job_id}/meta.json"
+    meta_uri = job_store.meta_uri(cfg.default_output_prefix(), job_id)
     try:
-        job = gcs.load_json(meta_uri)
+        job = job_store.load(meta_uri)
     except Exception:
         return _fail(404, "Job not found")
 
@@ -188,24 +193,14 @@ def publish_youtube(job_id: str):
         thumbnail_uri=request.form.get("youtube_thumbnail_uri", "").strip(),
     )
 
-    try:
-        job["youtube_status"] = "queued"
-        job["youtube_thumbnail_uri"] = yt_task.thumbnail_uri
-        gcs.save_json(job, meta_uri)
-    except Exception as exc:
-        logger.warning("Failed to update meta for YouTube queue job_id=%s: %s", job_id, exc)
+    job_store.update(meta_uri, {"youtube_status": "queued", "youtube_thumbnail_uri": yt_task.thumbnail_uri})
 
     youtube_worker_url = cfg.service_url.rstrip("/") + "/tasks/youtube"
     try:
         queue.enqueue(asdict(yt_task), worker_url=youtube_worker_url)
     except Exception as exc:
         logger.error("Failed to enqueue YouTube task job_id=%s: %s", job_id, exc)
-        try:
-            job["youtube_status"] = "failed"
-            job["youtube_error"] = "Failed to enqueue task"
-            gcs.save_json(job, meta_uri)
-        except Exception:
-            pass
+        job_store.update(meta_uri, {"youtube_status": "failed", "youtube_error": "Failed to enqueue task"})
         return _fail(502, f"Failed to enqueue YouTube task: {exc}")
 
     if _wants_json():
@@ -223,10 +218,9 @@ def delete_youtube(job_id: str):
     if uploader is None:
         abort(501)
 
-    output_prefix = cfg.default_output_prefix()
-    meta_uri = f"{output_prefix.rstrip('/')}/{job_id}/meta.json"
+    meta_uri = job_store.meta_uri(cfg.default_output_prefix(), job_id)
     try:
-        meta = gcs.load_json(meta_uri)
+        meta = job_store.load(meta_uri)
     except Exception:
         abort(404)
 
@@ -247,12 +241,7 @@ def delete_youtube(job_id: str):
         logger.error("Failed to delete YouTube video job_id=%s: %s", job_id, exc)
         return {"error": str(exc)}, 500
 
-    try:
-        meta["youtube_status"] = None
-        meta["youtube_url"] = None
-        gcs.save_json(meta, meta_uri)
-    except Exception as exc:
-        logger.warning("Failed to clear youtube meta job_id=%s: %s", job_id, exc)
+    job_store.update(meta_uri, {"youtube_status": None, "youtube_url": None})
 
     return {"job_id": job_id, "deleted": video_id}, 200
 
@@ -263,11 +252,10 @@ def delete_job(job_id: str):
     _require_csrf(request.headers.get("X-CSRF-Token", ""))
 
     cfg = current_app.config_obj
-    output_prefix = cfg.default_output_prefix()
-    meta_uri = f"{output_prefix.rstrip('/')}/{job_id}/meta.json"
+    meta_uri = job_store.meta_uri(cfg.default_output_prefix(), job_id)
 
     try:
-        job = gcs.load_json(meta_uri)
+        job = job_store.load(meta_uri)
     except Exception:
         job = {}
 
@@ -291,11 +279,10 @@ def job_detail(job_id: str):
         session["csrf_token"] = secrets.token_hex(16)
 
     cfg = current_app.config_obj
-    output_prefix = cfg.default_output_prefix()
-    meta_uri = f"{output_prefix.rstrip('/')}/{job_id}/meta.json"
+    meta_uri = job_store.meta_uri(cfg.default_output_prefix(), job_id)
 
     try:
-        job = gcs.load_json(meta_uri)
+        job = job_store.load(meta_uri)
         if not job.get("job_id"):
             job["job_id"] = job_id
     except Exception as exc:
@@ -324,17 +311,19 @@ def job_detail(job_id: str):
         job=job,
         signed_url=signed_url,
         download_url=download_url,
-        csrf_token=session["csrf_token"],
+        # M2MのHTMLアクセスではセッションを張らないためCSRFトークンは存在しない
+        csrf_token=session.get("csrf_token"),
         youtube_enabled=current_app.youtube_uploader is not None,
         max_youtube_title_len=MAX_YOUTUBE_TITLE_BASE_LENGTH,
     )
 
 
 def _save_job_meta(record: JobRecord) -> None:
-    if not record.output_prefix:
+    """ジョブ受付時のmeta.jsonを保存する。保存に失敗してもジョブ投入自体は続行する。"""
+    uri = job_store.meta_uri(record.output_prefix, record.job_id)
+    if not uri:
         return
     try:
-        meta_uri = f"{record.output_prefix.rstrip('/')}/{record.job_id}/meta.json"
-        gcs.save_json(record.to_dict(), meta_uri)
+        job_store.save(record.to_dict(), uri)
     except Exception as exc:
         logger.warning("Failed to save job metadata job_id=%s: %s", record.job_id, exc)
