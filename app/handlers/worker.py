@@ -4,27 +4,23 @@ import logging
 from io import BytesIO
 
 from flask import Blueprint, current_app, jsonify, request
-from google.auth.transport import requests as google_requests
-from google.oauth2 import id_token
 from PIL import Image
 
-from app.adapters import gcs
+from app.adapters import gcs, job_store
+from app.adapters.oidc import verify_task_caller
 from app.adapters.youtube import extract_video_id
 from app.domain.task import Task
-from app.domain.youtube_task import MAX_YOUTUBE_TITLE_BASE_LENGTH, TITLE_SUFFIX, YouTubeTask
+from app.domain.youtube_task import YouTubeTask
 
 logger = logging.getLogger(__name__)
 worker_bp = Blueprint("worker", __name__)
 
 
-_GOOGLE_AUTH_REQUEST = google_requests.Request()
-
-_FIXED_TAGS = ["lyric video", "lyria3", "AI音楽", "Digital Armor Style"]
-_FIXED_HASHTAGS = "#AI音楽 #lyricvideo #lyria3"
-
 # YouTube Data API の thumbnails.set はメディアサイズ上限が 2MB。
 # カバーアートは高解像度PNGで出力されるため、そのままだと超過することがある。
 _YOUTUBE_THUMBNAIL_MAX_BYTES = 2 * 1024 * 1024
+# YouTubeサムネイルの推奨解像度。これを超える入力は縮小してから圧縮する。
+_YOUTUBE_THUMBNAIL_MAX_SIZE = (1280, 720)
 
 
 def _fetch_recipe(audio_url: str) -> dict:
@@ -53,18 +49,19 @@ def _fetch_recipe_for_task(task: Task, ap_music_bucket: str) -> dict:
 def _prepare_thumbnail(image_bytes: bytes) -> BytesIO:
     """YouTubeサムネイルの上限(2MB)に収まるようJPEGへ再エンコードする。
 
-    PNGはロスレスで容量が大きくなりがちなため、画質を段階的に落としながら
-    JPEG再エンコードして上限内に収める。
+    PNGはロスレスで容量が大きくなりがちなため、まず推奨解像度(1280x720)まで縮小し、
+    さらに画質を段階的に落としながらJPEG再エンコードして上限内に収める。上限に収まらない
+    ままアップロードするとYouTube側が400を返すため、最後は最低画質まで落とし切る。
     """
     img = Image.open(BytesIO(image_bytes)).convert("RGB")
-    buf = BytesIO()
-    for quality in (90, 80, 70, 60, 50, 40):
+    img.thumbnail(_YOUTUBE_THUMBNAIL_MAX_SIZE, Image.LANCZOS)
+    for quality in (90, 80, 70, 60, 50, 40, 30, 20):
         buf = BytesIO()
-        img.save(buf, format="JPEG", quality=quality)
+        img.save(buf, format="JPEG", quality=quality, optimize=True)
         if buf.tell() <= _YOUTUBE_THUMBNAIL_MAX_BYTES:
-            break
-    buf.seek(0)
-    return buf
+            buf.seek(0)
+            return buf
+    raise ValueError(f"thumbnail exceeds {_YOUTUBE_THUMBNAIL_MAX_BYTES} bytes even at lowest quality")
 
 
 @worker_bp.route("/tasks/generate", methods=["POST"])
@@ -75,7 +72,7 @@ def process_task():
     pipeline = current_app.pipeline
 
     auth_header = request.headers.get("Authorization", "")
-    if not _verify_oidc_token(auth_header, cfg.task_audience_url, cfg.service_account_email):
+    if not verify_task_caller(auth_header, cfg.task_audience_url, cfg.service_account_email):
         return jsonify({"error": "Unauthorized"}), 401
 
     try:
@@ -86,8 +83,8 @@ def process_task():
         return jsonify({"error": str(exc)}), 400
 
     recipe = _fetch_recipe_for_task(task, cfg.ap_music_bucket)
-    meta_uri = f"{task.output_prefix.rstrip('/')}/{task.job_id}/meta.json" if task.output_prefix else None
-    _update_meta(
+    meta_uri = job_store.meta_uri(task.output_prefix, task.job_id)
+    job_store.update(
         meta_uri,
         {
             "status": "running",
@@ -108,13 +105,13 @@ def process_task():
     logger.info("Processing task job_id=%s", task.job_id)
     try:
         output_uri = pipeline.run(task)
-        _update_meta(meta_uri, {"status": "complete", "output_uri": output_uri})
+        job_store.update(meta_uri, {"status": "complete", "output_uri": output_uri})
         notifier.notify_complete(task.job_id, output_uri)
         logger.info("Task completed job_id=%s output=%s", task.job_id, output_uri)
         return jsonify({"job_id": task.job_id, "status": "complete", "output": output_uri})
     except Exception as exc:
         logger.error("Task failed job_id=%s: %s", task.job_id, exc, exc_info=True)
-        _update_meta(meta_uri, {"status": "failed", "error": str(exc)})
+        job_store.update(meta_uri, {"status": "failed", "error": str(exc)})
         notifier.notify_error(task.job_id, exc)
         return jsonify({"error": str(exc)}), 500
 
@@ -127,7 +124,7 @@ def process_youtube():
     uploader = current_app.youtube_uploader
 
     auth_header = request.headers.get("Authorization", "")
-    if not _verify_oidc_token(auth_header, cfg.task_audience_url, cfg.service_account_email):
+    if not verify_task_caller(auth_header, cfg.task_audience_url, cfg.service_account_email):
         return jsonify({"error": "Unauthorized"}), 401
 
     if uploader is None:
@@ -139,11 +136,10 @@ def process_youtube():
         logger.error("Invalid YouTube task payload: %s", exc)
         return jsonify({"error": str(exc)}), 400
 
-    output_prefix = cfg.default_output_prefix()
-    meta_uri = f"{output_prefix.rstrip('/')}/{yt_task.job_id}/meta.json"
+    meta_uri = job_store.meta_uri(cfg.default_output_prefix(), yt_task.job_id)
 
     try:
-        meta = gcs.load_json(meta_uri)
+        meta = job_store.load(meta_uri)
         if meta.get("youtube_status") == "complete" or meta.get("youtube_url"):
             youtube_url = meta.get("youtube_url", "")
             video_id = extract_video_id(youtube_url)
@@ -151,31 +147,20 @@ def process_youtube():
                 logger.info("YouTube upload already completed job_id=%s", yt_task.job_id)
                 return jsonify({"status": "already_completed"}), 200
             logger.info("YouTube video deleted, re-uploading job_id=%s video_id=%s", yt_task.job_id, video_id)
-            _update_meta(meta_uri, {"youtube_status": None, "youtube_url": None})
+            job_store.update(meta_uri, {"youtube_status": None, "youtube_url": None})
     except Exception as exc:
         logger.warning("Failed to check meta job_id=%s: %s", yt_task.job_id, exc)
 
-    _update_meta(meta_uri, {"youtube_status": "uploading"})
+    job_store.update(meta_uri, {"youtube_status": "uploading"})
 
     logger.info("Starting YouTube upload job_id=%s", yt_task.job_id)
     try:
-        tags = [t.strip() for t in yt_task.tags.split(",") if t.strip()]
-        for tag in reversed(_FIXED_TAGS):
-            if tag not in tags:
-                tags.insert(0, tag)
-        if yt_task.title.endswith(TITLE_SUFFIX):
-            title = yt_task.title
-        else:
-            title = yt_task.title[:MAX_YOUTUBE_TITLE_BASE_LENGTH] + TITLE_SUFFIX
-        description = (
-            yt_task.description.rstrip() + "\n\n" + _FIXED_HASHTAGS if yt_task.description else _FIXED_HASHTAGS
-        )
         with gcs.open_blob(yt_task.output_uri) as f:
             video_id = uploader.upload_from_stream(
                 f,
-                title=title,
-                description=description,
-                tags=tags,
+                title=yt_task.full_title(),
+                description=yt_task.full_description(),
+                tags=yt_task.tag_list(),
                 privacy=yt_task.privacy,
             )
 
@@ -188,48 +173,15 @@ def process_youtube():
                 logger.warning("Failed to set thumbnail job_id=%s: %s", yt_task.job_id, exc)
 
         youtube_url = f"https://www.youtube.com/watch?v={video_id}"
-        _update_meta(meta_uri, {"youtube_status": "complete", "youtube_url": youtube_url})
+        job_store.update(meta_uri, {"youtube_status": "complete", "youtube_url": youtube_url})
         notifier.notify_complete(yt_task.job_id, yt_task.output_uri, youtube_url=youtube_url)
         logger.info("YouTube upload complete job_id=%s url=%s", yt_task.job_id, youtube_url)
         return jsonify({"job_id": yt_task.job_id, "youtube_url": youtube_url})
     except Exception as exc:
         logger.error("YouTube upload failed job_id=%s: %s", yt_task.job_id, exc, exc_info=True)
-        _update_meta(meta_uri, {"youtube_status": "failed", "youtube_error": str(exc)})
+        job_store.update(meta_uri, {"youtube_status": "failed", "youtube_error": str(exc)})
         notifier.notify_error(yt_task.job_id, f"YouTube upload failed: {exc}")
         if hasattr(exc, "resp") and hasattr(exc.resp, "status") and 400 <= exc.resp.status < 500:
             logger.info("Dropping unrecoverable task job_id=%s status=%s", yt_task.job_id, exc.resp.status)
             return jsonify({"error": str(exc), "dropped": True}), 200
         return jsonify({"error": str(exc)}), 500
-
-
-def _verify_oidc_token(authorization: str, audience: str, expected_email: str = "") -> bool:
-    """AuthorizationヘッダーのOIDCトークンをaudienceとservice account emailで検証する。"""
-    if not audience:
-        logger.error("TASK_AUDIENCE_URL not configured — denying request to be safe")
-        return False
-    if not authorization.startswith("Bearer "):
-        return False
-    token = authorization[len("Bearer ") :]
-    try:
-        id_info = id_token.verify_oauth2_token(token, _GOOGLE_AUTH_REQUEST, audience)
-        if expected_email and id_info.get("email") != expected_email:
-            logger.warning("OIDC email mismatch: expected=%s got=%s", expected_email, id_info.get("email"))
-            return False
-        return True
-    except Exception as exc:
-        logger.warning("OIDC verification failed: %s", exc)
-        return False
-
-
-def _update_meta(uri: str | None, updates: dict) -> None:
-    if not uri:
-        return
-    try:
-        try:
-            meta = gcs.load_json(uri)
-        except Exception:
-            meta = {}
-        meta.update(updates)
-        gcs.save_json(meta, uri)
-    except Exception as exc:
-        logger.warning("Failed to update job metadata uri=%s: %s", uri, exc)

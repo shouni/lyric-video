@@ -19,7 +19,7 @@ _SUBPROCESS_TIMEOUT_SEC = 300.0
 # Whisperのモデルロード込みで動く可能性があるため、通常のffmpeg/ffprobe呼び出しより
 # 長いタイムアウトを与える。
 _ALIGN_TIMEOUT_SEC = 900.0
-_WHISPER_MODEL = "small"
+DEFAULT_WHISPER_MODEL = "small"
 # 曲1本(セクションではなく全体)としてあり得る上限。異常なメタデータ(負値・極端な
 # 大きさ)をここで弾き、ffmpegに不正な-ss/-tをそのまま渡さないようにする。
 _MAX_PLAUSIBLE_SEC = 3600.0
@@ -44,6 +44,7 @@ def build(
     output_path: Path,
     ap_mv_bucket: str = "ap-mv",
     ap_music_bucket: str = "ap-music",
+    whisper_model: str = DEFAULT_WHISPER_MODEL,
 ) -> Path:
     """ap-mvの完成動画とap-musicの楽曲を合成し、字幕焼き込み済みMP4を作る。
 
@@ -106,7 +107,7 @@ def build(
     fontsize = _write_reference_subtitles(cuts_sorted, video_width, video_height, reference_subs_path)
 
     subs_path = work_dir / "section_subtitles.ass"
-    _align_with_whisper(trimmed_audio_path, reference_subs_path, subs_path)
+    _align_with_whisper(trimmed_audio_path, reference_subs_path, subs_path, whisper_model)
     _wrap_aligned_subtitles(subs_path, video_width, fontsize)
 
     _run(
@@ -217,7 +218,9 @@ def _write_reference_subtitles(
     return fontsize
 
 
-def _align_with_whisper(audio_path: Path, reference_subs_path: Path, out_path: Path) -> None:
+def _align_with_whisper(
+    audio_path: Path, reference_subs_path: Path, out_path: Path, whisper_model: str = DEFAULT_WHISPER_MODEL
+) -> None:
     """align_subtitles.py(Whisper強制アライメント)でリファレンスASSの実際の発話時刻を求める。"""
     _run(
         [
@@ -227,7 +230,7 @@ def _align_with_whisper(audio_path: Path, reference_subs_path: Path, out_path: P
             str(reference_subs_path),
             str(out_path),
             "--model",
-            _WHISPER_MODEL,
+            whisper_model,
         ],
         "align subtitles",
         timeout=_ALIGN_TIMEOUT_SEC,

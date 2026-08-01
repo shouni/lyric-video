@@ -35,7 +35,7 @@ jobs:
         run: ruff format --check .
 
   build:
-    name: Build & Sanity Check
+    name: Build, Test & Sanity Check
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -47,7 +47,7 @@ jobs:
           cache: pip
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: pip install -r requirements-dev.txt
 
       - name: Compile check
         run: python -m compileall app scripts
@@ -57,6 +57,11 @@ jobs:
           # create_app() は起動時に SESSION_SECRET を必須で要求するため、CIでのimport確認用にダミー値を渡す
           SESSION_SECRET: "ci-dummy-session-secret"
         run: python -c "import app.main"
+
+      - name: Run tests
+        env:
+          SESSION_SECRET: "ci-dummy-session-secret"
+        run: python -m pytest -q
 
   vulncheck:
     name: pip-audit

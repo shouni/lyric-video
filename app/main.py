@@ -6,7 +6,7 @@ import sys
 from flask import Flask, g, redirect, request, url_for
 from werkzeug.middleware.proxy_fix import ProxyFix
 
-from app.adapters.m2m import verify_m2m_token
+from app.adapters.oidc import verify_service_account
 from app.adapters.slack import SlackNotifier
 from app.adapters.task_queue import CloudTasksQueue
 from app.adapters.youtube import YouTubeUploader
@@ -64,7 +64,11 @@ def create_app() -> Flask:
     app.config_obj = cfg
     app.queue = queue
     app.notifier = SlackNotifier(cfg.slack_webhook_url, cfg.service_url)
-    app.pipeline = PipelineRunner(ap_mv_bucket=cfg.ap_mv_bucket, ap_music_bucket=cfg.ap_music_bucket)
+    app.pipeline = PipelineRunner(
+        ap_mv_bucket=cfg.ap_mv_bucket,
+        ap_music_bucket=cfg.ap_music_bucket,
+        video_whisper_model=cfg.video_whisper_model,
+    )
     app.youtube_uploader = youtube_uploader
 
     app.register_blueprint(auth_bp)
@@ -76,7 +80,7 @@ def create_app() -> Flask:
         """公開パス以外へのアクセスに、ログイン済みセッションまたはM2M OIDCトークンを要求する。"""
         if request.path in _PUBLIC_PATHS:
             return None
-        m2m_email = verify_m2m_token(
+        m2m_email = verify_service_account(
             request.headers.get("Authorization", ""), cfg.service_url, cfg.allowed_m2m_service_accounts
         )
         if m2m_email:
