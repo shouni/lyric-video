@@ -1,0 +1,12 @@
+# worker だけが使う依存。
+#
+# Whisper による強制アライメントは align_subtitles.py が別プロセスで実行する。
+# web 側（app.main → runner → video_merge）はこれらを import しないため、
+# web のイメージに入れる必要がない。torch だけで 1〜2GB あり、
+# 公開サービスのコールドスタートを重くしていた。
+
+stable-ts
+silero-vad
+
+# Transitive dependencies pinned to patched versions (pip-audit)
+torch>=2.10.0
