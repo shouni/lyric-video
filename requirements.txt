@@ -1,8 +1,9 @@
+# web / worker の両方が使う依存。
+# Whisper 系の重いパッケージは requirements-worker.txt に分けている（web のイメージから外すため）。
+
 # Processing
-stable-ts
 pysubs2
 pillow>=12.2.0
-silero-vad
 
 # Web app
 flask>=3.0.0
@@ -18,5 +19,4 @@ google-api-python-client>=2.100.0
 
 # Transitive dependencies pinned to patched versions (pip-audit)
 urllib3>=2.7.0
-torch>=2.10.0
 filelock>=3.20.3

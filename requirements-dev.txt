@@ -1,4 +1,7 @@
 # 開発・CI用（本番イメージには含めない）
 -r requirements.txt
+# tests/test_align_subtitles.py が app.align_subtitles を読み込み、
+# そこで stable_whisper を import するため CI でも worker 側の依存が要る。
+-r requirements-worker.txt
 pytest>=8.0
 ruff>=0.6
