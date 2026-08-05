@@ -3,10 +3,19 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 
+# SERVER_ROLE が取りうる値。空文字は「web と worker の両方を提供する」を意味し、
+# ローカル開発と、分離前の構成での互換動作に使う。
+SERVER_ROLE_BOTH = ""
+SERVER_ROLE_WEB = "web"
+SERVER_ROLE_WORKER = "worker"
+_SERVER_ROLES = (SERVER_ROLE_BOTH, SERVER_ROLE_WEB, SERVER_ROLE_WORKER)
+
 
 @dataclass
 class Config:
     service_url: str
+    # server_role はこのプロセスが担う役割。空なら両方を提供する。
+    server_role: str
     port: str
     project_id: str
     location_id: str
@@ -35,6 +44,14 @@ class Config:
     # M2M (サーバー間通信) 用OIDC許可リスト
     allowed_m2m_service_accounts: list[str] = field(default_factory=list)
 
+    def serves_web(self) -> bool:
+        """この役割がWeb面(/, /jobs, OAuth)を提供するかを返す。"""
+        return self.server_role in (SERVER_ROLE_BOTH, SERVER_ROLE_WEB)
+
+    def serves_worker(self) -> bool:
+        """この役割がWorker面(/tasks/*)を提供するかを返す。"""
+        return self.server_role in (SERVER_ROLE_BOTH, SERVER_ROLE_WORKER)
+
     def is_secure_url(self) -> bool:
         """サービスURLがHTTPSかどうかを返す。"""
         return self.service_url.startswith("https://")
@@ -46,6 +63,9 @@ class Config:
     @classmethod
     def from_env(cls) -> Config:
         """環境変数からアプリケーション設定を読み込む。"""
+        server_role = os.getenv("SERVER_ROLE", "").strip().lower()
+        if server_role not in _SERVER_ROLES:
+            raise RuntimeError(f"SERVER_ROLE ({server_role!r}) は 'web', 'worker', または未設定である必要があります")
         service_url = os.getenv("SERVICE_URL", "http://localhost:8080").rstrip("/")
         worker_url = os.getenv("WORKER_URL", "").strip()
         if not worker_url:
@@ -53,6 +73,7 @@ class Config:
         task_audience_url = os.getenv("TASK_AUDIENCE_URL", "").strip() or service_url
         return cls(
             service_url=service_url,
+            server_role=server_role,
             port=os.getenv("PORT", "8080"),
             project_id=os.getenv("GCP_PROJECT_ID", ""),
             location_id=os.getenv("GCP_LOCATION_ID", "asia-northeast1"),
@@ -69,7 +90,13 @@ class Config:
             ap_music_bucket=os.getenv("AP_MUSIC_BUCKET", "ap-music"),
             google_client_id=os.getenv("GOOGLE_CLIENT_ID", ""),
             google_client_secret=os.getenv("GOOGLE_CLIENT_SECRET", ""),
-            session_secret=_require_env("SESSION_SECRET"),
+            # Worker面だけを提供するプロセスはセッションもOAuthも使わないため、
+            # 使いもしない認証情報へのアクセス権を配らずに済むよう必須にしない。
+            session_secret=(
+                _require_env("SESSION_SECRET")
+                if server_role in (SERVER_ROLE_BOTH, SERVER_ROLE_WEB)
+                else os.getenv("SESSION_SECRET", "")
+            ),
             youtube_refresh_token=os.getenv("YOUTUBE_REFRESH_TOKEN", ""),
             allowed_emails=_split_env("ALLOWED_EMAILS"),
             allowed_domains=_split_env("ALLOWED_DOMAINS"),
