@@ -5,15 +5,23 @@ import pytest
 from app.main import create_app
 
 
-@pytest.fixture
-def client(monkeypatch):
+def _build_client(monkeypatch, role: str | None = None):
     for key in ("GCP_PROJECT_ID", "CLOUD_TASKS_QUEUE_ID", "SERVICE_ACCOUNT_EMAIL", "YOUTUBE_REFRESH_TOKEN"):
         monkeypatch.delenv(key, raising=False)
     monkeypatch.setenv("SESSION_SECRET", "test-secret")
     monkeypatch.setenv("ALLOWED_EMAILS", "me@example.com")
+    if role is None:
+        monkeypatch.delenv("SERVER_ROLE", raising=False)
+    else:
+        monkeypatch.setenv("SERVER_ROLE", role)
     app = create_app()
     app.config.update(TESTING=True)
     return app.test_client()
+
+
+@pytest.fixture
+def client(monkeypatch):
+    return _build_client(monkeypatch)
 
 
 class TestHealthz:
@@ -57,3 +65,40 @@ class TestQueueNotConfigured:
         )
         assert response.status_code == 501
         assert response.get_json()["status"] == "error"
+
+
+class TestServerRoleRouting:
+    """SERVER_ROLE に応じて Blueprint ごと登録されないことを確認する。
+
+    公開サービス上に /tasks/* が存在しないことが分離の目的なので、
+    「401 で拒否される」ではなく「404 でルートが無い」であることを見る。
+    """
+
+    def test_web_role_does_not_serve_worker_routes(self, monkeypatch):
+        client = _build_client(monkeypatch, role="web")
+
+        assert client.post("/tasks/generate", json={}).status_code == 404
+        assert client.post("/tasks/youtube", json={}).status_code == 404
+
+    def test_worker_role_does_not_serve_web_routes(self, monkeypatch):
+        client = _build_client(monkeypatch, role="worker")
+
+        assert client.get("/").status_code == 404
+        assert client.get("/jobs").status_code == 404
+
+    def test_worker_role_still_serves_worker_routes(self, monkeypatch):
+        client = _build_client(monkeypatch, role="worker")
+
+        # OIDC トークンが無いので 401。404 でないことがルート登録の証拠になる。
+        assert client.post("/tasks/generate", json={}).status_code == 401
+
+    def test_worker_role_keeps_healthz(self, monkeypatch):
+        client = _build_client(monkeypatch, role="worker")
+
+        assert client.get("/healthz").status_code == 200
+
+    def test_unset_role_serves_both(self, monkeypatch):
+        client = _build_client(monkeypatch)
+
+        assert client.post("/tasks/generate", json={}).status_code == 401
+        assert client.get("/").status_code in (200, 302, 303)

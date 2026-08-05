@@ -27,6 +27,7 @@ _ENV_KEYS = [
     "ALLOWED_EMAILS",
     "ALLOWED_DOMAINS",
     "ALLOWED_M2M_SERVICE_ACCOUNTS",
+    "SERVER_ROLE",
 ]
 
 
@@ -93,3 +94,53 @@ class TestDerivedHelpers:
 
     def test_default_output_prefix_is_empty_without_bucket(self, env):
         assert Config.from_env().default_output_prefix() == ""
+
+
+class TestServerRole:
+    def test_defaults_to_serving_both(self, env):
+        cfg = Config.from_env()
+        assert cfg.server_role == ""
+        assert cfg.serves_web()
+        assert cfg.serves_worker()
+
+    @pytest.mark.parametrize(
+        ("raw", "serves_web", "serves_worker"),
+        [
+            ("web", True, False),
+            ("worker", False, True),
+            (" WORKER ", False, True),
+        ],
+    )
+    def test_parses_role(self, env, raw, serves_web, serves_worker):
+        env.setenv("SERVER_ROLE", raw)
+        cfg = Config.from_env()
+        assert cfg.serves_web() is serves_web
+        assert cfg.serves_worker() is serves_worker
+
+    def test_rejects_unknown_role(self, env):
+        """未知の値を黙って両方構築へフォールバックさせない。
+
+        フォールバックすると、タイプミスで意図せず /tasks/* が公開される。
+        """
+        env.setenv("SERVER_ROLE", "batch")
+        with pytest.raises(RuntimeError, match="SERVER_ROLE"):
+            Config.from_env()
+
+    def test_worker_does_not_require_session_secret(self, env):
+        """Worker 面だけのプロセスは OAuth/セッションを使わないため必須にしない。
+
+        必須のままだと、使いもしない認証情報へのアクセス権を Worker の
+        サービスアカウントに与える必要が生じる。
+        """
+        env.delenv("SESSION_SECRET")
+        env.setenv("SERVER_ROLE", "worker")
+
+        cfg = Config.from_env()
+
+        assert cfg.session_secret == ""
+
+    def test_web_still_requires_session_secret(self, env):
+        env.delenv("SESSION_SECRET")
+        env.setenv("SERVER_ROLE", "web")
+        with pytest.raises(ValueError, match="SESSION_SECRET"):
+            Config.from_env()
