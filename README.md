@@ -147,9 +147,34 @@ gcloud builds submit --config=cloudbuild.yaml
 
 > 🔒 **セキュリティ推奨事項:** `GOOGLE_CLIENT_SECRET`・`SESSION_SECRET`・`YOUTUBE_REFRESH_TOKEN` などの機密情報は、本番環境では [Google Cloud Secret Manager](https://cloud.google.com/secret-manager) で管理することを推奨します。
 
-> **サービスアカウントの必要権限:**
-> - `roles/storage.objectAdmin`（GCS 読み書き）
-> - `roles/cloudtasks.enqueuer`（タスク投入）
+### サービスアカウントの必要権限
+
+**web と worker で実行 SA を分けており、必要な権限も異なります。**
+ロール名は環境によって粒度が変わるので、何ができる必要があるかだけ挙げます。
+
+| | web | worker |
+| --- | --- | --- |
+| `GCS_BUCKET`（成果物） | 読み書き・削除 | 読み書き |
+| `AP_MUSIC_BUCKET` / `AP_MV_BUCKET` | **不要**（job_id をタスクに載せるだけ） | **読み取りのみ**（素材を読むのはこちら） |
+| Cloud Tasks への投入と ActAs | 必要 | 不要（タスクを積まない） |
+| 署名付き URL の生成 | 必要 | 不要 |
+| worker サービスの呼び出し | 必要 | 不要 |
+
+**シークレットも役割ごとに分かれます。** Cloud Run はシークレット env を起動時に解決するため、
+env に参照が残っていると使っていなくてもアクセス権が要ります。IAM だけ絞っても分離になりません。
+
+| | web | worker |
+| --- | --- | --- |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | 要（OAuth・YouTube） | 要（YouTube アップロード） |
+| `YOUTUBE_REFRESH_TOKEN` | 要（動画の削除） | 要（アップロード） |
+| `SESSION_SECRET` | 要 | **不要**（`SERVER_ROLE=worker` は OAuth もセッションも使わない） |
+| `SLACK_WEBHOOK_URL` | **不要**（通知するのは worker だけ） | 要 |
+
+> **`SERVICE_ACCOUNT_EMAIL` は「呼び出し元」を指します。** `verify_task_caller` の第 3 引数として
+> 使われるため、**worker 側には worker 自身ではなく web の SA** を設定してください。
+
+> **素材バケットは読み取りだけで足ります。** `storage.objectAdmin` は使わないでください
+> （オブジェクト ACL の操作まで許します）。削除を含まない読み取り専用ロールを選んでください。
 
 ---
 
