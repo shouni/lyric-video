@@ -9,6 +9,7 @@ from PIL import Image
 from app.adapters import gcs, job_store
 from app.adapters.oidc import verify_task_caller
 from app.adapters.youtube import extract_video_id
+from app.domain.music_layout import music_recipe_uri
 from app.domain.task import Task
 from app.domain.youtube_task import YouTubeTask
 
@@ -23,27 +24,24 @@ _YOUTUBE_THUMBNAIL_MAX_BYTES = 2 * 1024 * 1024
 _YOUTUBE_THUMBNAIL_MAX_SIZE = (1280, 720)
 
 
-def _fetch_recipe(audio_url: str) -> dict:
-    """audio_urlと同じベース名のレシピJSON(例: foo.mp3 -> foo.json)を取得する。
+def _fetch_recipe_for_task(task: Task, ap_music_bucket: str) -> dict:
+    """タスクのmusic_job_idから、YouTube投稿フォーム補助用のレシピ情報を取得する。
 
     レシピが存在しない・壊れている場合は空dictを返す（YouTube投稿フォームの
     タイトル・説明欄のデフォルト値を埋めるための補助情報であり、動画生成の
     成否には影響しないため）。
+
+    以前は音声URIの拡張子を .mp3 -> .json と差し替えて探していたが、ap-music の
+    レシピは audio.json ではなく recipe.json という別名で置かれるため当たらず、
+    常に空dictを返していた。フォームの初期値が埋まらないだけで例外にはならないので
+    表面化していなかった。
     """
-    if not audio_url.lower().endswith(".mp3"):
-        return {}
-    recipe_uri = audio_url[: -len(".mp3")] + ".json"
-    try:
-        return gcs.load_json(recipe_uri)
-    except Exception:
-        return {}
-
-
-def _fetch_recipe_for_task(task: Task, ap_music_bucket: str) -> dict:
-    """タスクのmusic_job_idから、YouTube投稿フォーム補助用のレシピ情報を取得する。"""
     if not task.music_job_id:
         return {}
-    return _fetch_recipe(f"gs://{ap_music_bucket}/{task.music_job_id}.mp3")
+    try:
+        return gcs.load_json(music_recipe_uri(ap_music_bucket, task.music_job_id))
+    except Exception:
+        return {}
 
 
 def _prepare_thumbnail(image_bytes: bytes) -> BytesIO:

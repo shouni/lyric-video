@@ -12,6 +12,7 @@ from PIL import Image, ImageDraw
 
 from app.adapters import gcs
 from app.burn_subs import load_font
+from app.domain.music_layout import music_audio_uri
 
 logger = logging.getLogger(__name__)
 
@@ -75,7 +76,7 @@ def build(
     logger.info("Downloading video from %s", video_uri)
     gcs.download(video_uri, str(video_path))
 
-    audio_uri = f"gs://{ap_music_bucket}/{music_job_id}.mp3"
+    audio_uri = music_audio_uri(ap_music_bucket, music_job_id)
     full_audio_path = work_dir / "full_song.mp3"
     logger.info("Downloading music from %s", audio_uri)
     gcs.download(audio_uri, str(full_audio_path))

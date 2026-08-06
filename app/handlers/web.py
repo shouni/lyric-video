@@ -195,7 +195,13 @@ def publish_youtube(job_id: str):
 
     job_store.update(meta_uri, {"youtube_status": "queued", "youtube_thumbnail_uri": yt_task.thumbnail_uri})
 
-    youtube_worker_url = cfg.service_url.rstrip("/") + "/tasks/youtube"
+    # 宛先は task_audience_url から組み立てる。service_url は Web 面自身のURLで、
+    # SERVER_ROLE=web のプロセスは worker_bp を登録しないため /tasks/* は 404 になる。
+    # CloudTasksQueue.enqueue は worker_url を差し替えても audience は
+    # task_audience_url のままなので、ここを揃えないと宛先とaudienceも食い違う。
+    # 単一プロセス(SERVER_ROLE未設定)では task_audience_url が service_url に
+    # フォールバックし、その場合は worker_bp も同じプロセスに載っている。
+    youtube_worker_url = cfg.task_audience_url.rstrip("/") + "/tasks/youtube"
     try:
         queue.enqueue(asdict(yt_task), worker_url=youtube_worker_url)
     except Exception as exc:
