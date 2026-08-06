@@ -10,6 +10,7 @@ from pathlib import Path
 
 from app import video_merge
 from app.adapters import gcs
+from app.domain.music_layout import music_audio_uri
 from app.domain.task import Task
 
 logger = logging.getLogger(__name__)
@@ -59,7 +60,7 @@ class PipelineRunner:
 
     def _run_image_slideshow(self, task: Task) -> str:
         """静止画キーフレーム+カラオケ字幕焼き込みでMVを生成する既存経路。"""
-        audio_url = f"gs://{self._ap_music_bucket}/{task.music_job_id}.mp3"
+        audio_url = music_audio_uri(self._ap_music_bucket, task.music_job_id)
         keyframes_url = f"gs://{self._ap_mv_bucket}/veo/jobs/{task.ap_mv_job_id}/keyframes.zip"
 
         with tempfile.TemporaryDirectory(prefix="lyric_video_") as work_dir:

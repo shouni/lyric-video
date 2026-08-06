@@ -1,10 +1,11 @@
-"""domain 配下（Task / JobRecord / YouTubeTask）のテスト。"""
+"""domain 配下（Task / JobRecord / YouTubeTask / music_layout）のテスト。"""
 
 import json
 
 import pytest
 
 from app.domain.job import JobRecord
+from app.domain.music_layout import music_audio_uri, music_job_prefix, music_recipe_uri
 from app.domain.task import Task, new_job_id
 from app.domain.youtube_task import FIXED_HASHTAGS, FIXED_TAGS, MAX_YOUTUBE_TITLE_LENGTH, TITLE_SUFFIX, YouTubeTask
 
@@ -150,3 +151,29 @@ class TestYouTubeTaskTags:
 
     def test_ignores_empty_entries(self):
         assert self._task(" , ,").tag_list() == FIXED_TAGS
+
+
+class TestMusicLayout:
+    """ap-music の配置は ap-comp の storage_layout.go が決めている。
+
+    かつてバケット直下の <job_id>.mp3 だったものが music/<job_id>/audio.mp3 へ
+    移り、このアプリだけ追随できていなかった。再発すると素材の取得が全滅する。
+    """
+
+    def test_job_prefix_groups_artifacts_under_the_job_id(self):
+        assert music_job_prefix("ap-music", "comp-1") == "gs://ap-music/music/comp-1/"
+
+    def test_audio_uri_is_not_flat_under_the_bucket(self):
+        uri = music_audio_uri("ap-music", "comp-1")
+        assert uri == "gs://ap-music/music/comp-1/audio.mp3"
+        assert uri != "gs://ap-music/comp-1.mp3"
+
+    def test_recipe_is_named_recipe_json_not_audio_json(self):
+        # 拡張子の差し替えでは当たらないことが、この命名を明示する理由。
+        assert music_recipe_uri("ap-music", "comp-1") == "gs://ap-music/music/comp-1/recipe.json"
+        assert music_recipe_uri("ap-music", "comp-1") != music_audio_uri("ap-music", "comp-1")[: -len(".mp3")] + ".json"
+
+    def test_audio_and_recipe_share_a_prefix(self):
+        prefix = music_job_prefix("ap-music", "comp-1")
+        assert music_audio_uri("ap-music", "comp-1").startswith(prefix)
+        assert music_recipe_uri("ap-music", "comp-1").startswith(prefix)
