@@ -13,6 +13,9 @@ _ENV_KEYS = [
     "GCP_LOCATION_ID",
     "CLOUD_TASKS_QUEUE_ID",
     "SERVICE_ACCOUNT_EMAIL",
+    "TASK_CALLER_SERVICE_ACCOUNT_EMAIL",
+    "SIGNING_SERVICE_ACCOUNT_EMAIL",
+    "ALLOWED_TASK_SERVICE_ACCOUNTS",
     "GCS_BUCKET",
     "GCS_OUTPUT_PREFIX",
     "SLACK_WEBHOOK_URL",
@@ -36,6 +39,10 @@ def env(monkeypatch):
     for key in _ENV_KEYS:
         monkeypatch.delenv(key, raising=False)
     monkeypatch.setenv("SESSION_SECRET", "secret")
+    # SERVER_ROLE は明示が必須。役割に関心のないテストは both で読む。
+    monkeypatch.setenv("SERVER_ROLE", "both")
+    # both は worker 面を含むため、許可リストが無いと起動しない（fail-closed）。
+    monkeypatch.setenv("ALLOWED_TASK_SERVICE_ACCOUNTS", "tasks@project.iam.gserviceaccount.com")
     return monkeypatch
 
 
@@ -97,11 +104,20 @@ class TestDerivedHelpers:
 
 
 class TestServerRole:
-    def test_defaults_to_serving_both(self, env):
+    def test_both_serves_web_and_worker(self, env):
         cfg = Config.from_env()
-        assert cfg.server_role == ""
+        assert cfg.server_role == "both"
         assert cfg.serves_web()
         assert cfg.serves_worker()
+
+    def test_rejects_unset_role(self, env):
+        """未設定を both に落とさない。
+
+        落とすと、本番の環境変数が 1 つ欠けただけで公開 web に /tasks/* が復活する。
+        """
+        env.delenv("SERVER_ROLE")
+        with pytest.raises(RuntimeError, match="SERVER_ROLE"):
+            Config.from_env()
 
     @pytest.mark.parametrize(
         ("raw", "serves_web", "serves_worker"),

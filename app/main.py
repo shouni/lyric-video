@@ -50,14 +50,14 @@ def create_app() -> Flask:
 
     # タスクを投入するのは Web 面だけ。Worker は受け取る側なので組み立てない。
     queue = None
-    if cfg.serves_web() and cfg.project_id and cfg.queue_id and cfg.service_account_email:
+    if cfg.serves_web() and cfg.project_id and cfg.queue_id and cfg.task_caller_service_account_email:
         try:
             queue = CloudTasksQueue(
                 project_id=cfg.project_id,
                 location_id=cfg.location_id,
                 queue_id=cfg.queue_id,
                 worker_url=cfg.worker_url,
-                service_account_email=cfg.service_account_email,
+                service_account_email=cfg.task_caller_service_account_email,
                 audience=cfg.task_audience_url,
             )
             logger.info("Cloud Tasks queue initialized queue=%s", cfg.queue_id)

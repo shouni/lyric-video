@@ -50,21 +50,31 @@ def verify_service_account(authorization_header: str, audience: str, allowed_ser
     return email
 
 
-def verify_task_caller(authorization_header: str, audience: str, expected_email: str = "") -> bool:
+def verify_task_caller(authorization_header: str, audience: str, allowed_service_accounts: list[str]) -> bool:
     """Cloud Tasks ワーカーエンドポイントの呼び出し元を検証する。
 
-    audience が未設定のまま検証を通すと誰でも /tasks/* を叩けてしまうため、
-    設定漏れは拒否として扱う。
+    audience と許可リストのどちらも、未設定なら拒否する（fail-closed）。audience は
+    トークンの**送り先**を表すだけで、許可した呼び出し元かどうかは示さない。任意の
+    サービスアカウントが同じ audience のトークンを取得できるため、email クレームを
+    許可リストと照合するところまでやって初めて呼び出し元を認可したことになる。
+
+    「設定し忘れたら全部通る」の逆にしてある。以前は expected_email が空だと照合ごと
+    スキップしていたため、設定漏れがそのまま検証の無効化になっていた。
     """
     if not audience:
         logger.error("TASK_AUDIENCE_URL not configured — denying request to be safe")
+        return False
+    if not allowed_service_accounts:
+        logger.error("ALLOWED_TASK_SERVICE_ACCOUNTS not configured — denying request to be safe")
         return False
 
     claims = verify_bearer_token(authorization_header, audience)
     if claims is None:
         return False
 
-    if expected_email and claims.get("email") != expected_email:
-        logger.warning("OIDC email mismatch: expected=%s got=%s", expected_email, claims.get("email"))
+    email = claims.get("email", "").lower()
+    allowed = {sa.strip().lower() for sa in allowed_service_accounts if sa.strip()}
+    if not claims.get("email_verified") or email not in allowed:
+        logger.warning("task token rejected: unauthorized service account email=%s", email)
         return False
     return True

@@ -61,22 +61,39 @@ class TestVerifyServiceAccount:
 
 
 class TestVerifyTaskCaller:
-    def test_accepts_expected_service_account(self, verified):
-        verified({"email": SA})
-        assert oidc.verify_task_caller("Bearer tok", AUDIENCE, SA) is True
+    def test_accepts_allowed_service_account(self, verified):
+        verified({"email": SA, "email_verified": True})
+        assert oidc.verify_task_caller("Bearer tok", AUDIENCE, [SA]) is True
+
+    def test_is_case_insensitive_on_email(self, verified):
+        verified({"email": "SA@project.iam.gserviceaccount.com", "email_verified": True})
+        assert oidc.verify_task_caller("Bearer tok", AUDIENCE, [SA]) is True
+
+    def test_accepts_any_listed_service_account(self, verified):
+        verified({"email": "worker@project.iam.gserviceaccount.com", "email_verified": True})
+        assert oidc.verify_task_caller("Bearer tok", AUDIENCE, [SA, "worker@project.iam.gserviceaccount.com"]) is True
 
     def test_rejects_other_service_account(self, verified):
-        verified({"email": "other@example.com"})
-        assert oidc.verify_task_caller("Bearer tok", AUDIENCE, SA) is False
+        verified({"email": "other@example.com", "email_verified": True})
+        assert oidc.verify_task_caller("Bearer tok", AUDIENCE, [SA]) is False
 
-    def test_accepts_any_email_when_expectation_is_empty(self, verified):
-        verified({"email": "other@example.com"})
-        assert oidc.verify_task_caller("Bearer tok", AUDIENCE, "") is True
+    def test_rejects_unverified_email(self, verified):
+        verified({"email": SA, "email_verified": False})
+        assert oidc.verify_task_caller("Bearer tok", AUDIENCE, [SA]) is False
+
+    def test_denies_when_allow_list_is_empty(self, verified):
+        """許可リストが空なら「誰も許可しない」。
+
+        以前は照合ごとスキップして全員通していた。設定漏れがそのまま検証の
+        無効化になる形だったため、fail-closed へ変更した。
+        """
+        verified({"email": SA, "email_verified": True})
+        assert oidc.verify_task_caller("Bearer tok", AUDIENCE, []) is False
 
     def test_denies_when_audience_is_not_configured(self, verified):
-        verified({"email": SA})
-        assert oidc.verify_task_caller("Bearer tok", "", SA) is False
+        verified({"email": SA, "email_verified": True})
+        assert oidc.verify_task_caller("Bearer tok", "", [SA]) is False
 
     def test_denies_invalid_token(self, verified):
         verified(error=ValueError("expired"))
-        assert oidc.verify_task_caller("Bearer tok", AUDIENCE, SA) is False
+        assert oidc.verify_task_caller("Bearer tok", AUDIENCE, [SA]) is False

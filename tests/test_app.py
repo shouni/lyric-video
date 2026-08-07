@@ -11,10 +11,8 @@ def _build_client(monkeypatch, role: str | None = None):
         monkeypatch.delenv(key, raising=False)
     monkeypatch.setenv("SESSION_SECRET", "test-secret")
     monkeypatch.setenv("ALLOWED_EMAILS", "me@example.com")
-    if role is None:
-        monkeypatch.delenv("SERVER_ROLE", raising=False)
-    else:
-        monkeypatch.setenv("SERVER_ROLE", role)
+    monkeypatch.setenv("ALLOWED_TASK_SERVICE_ACCOUNTS", "tasks@project.iam.gserviceaccount.com")
+    monkeypatch.setenv("SERVER_ROLE", role or "both")
     app = create_app()
     app.config.update(TESTING=True)
     return app.test_client()
@@ -98,8 +96,8 @@ class TestServerRoleRouting:
 
         assert client.get("/healthz").status_code == 200
 
-    def test_unset_role_serves_both(self, monkeypatch):
-        client = _build_client(monkeypatch)
+    def test_both_role_serves_web_and_worker(self, monkeypatch):
+        client = _build_client(monkeypatch, role="both")
 
         assert client.post("/tasks/generate", json={}).status_code == 401
         assert client.get("/").status_code in (200, 302, 303)
