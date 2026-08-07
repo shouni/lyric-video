@@ -7,7 +7,7 @@ from app.main import create_app
 
 
 def _build_client(monkeypatch, role: str | None = None):
-    for key in ("GCP_PROJECT_ID", "CLOUD_TASKS_QUEUE_ID", "SERVICE_ACCOUNT_EMAIL", "YOUTUBE_REFRESH_TOKEN"):
+    for key in ("GCP_PROJECT_ID", "CLOUD_TASKS_QUEUE_ID", "TASK_CALLER_SERVICE_ACCOUNT_EMAIL", "YOUTUBE_REFRESH_TOKEN"):
         monkeypatch.delenv(key, raising=False)
     monkeypatch.setenv("SESSION_SECRET", "test-secret")
     monkeypatch.setenv("ALLOWED_EMAILS", "me@example.com")
@@ -112,7 +112,7 @@ class TestYouTubeEnqueueTarget:
     """
 
     def _build_web_app(self, monkeypatch):
-        for key in ("GCP_PROJECT_ID", "CLOUD_TASKS_QUEUE_ID", "SERVICE_ACCOUNT_EMAIL"):
+        for key in ("GCP_PROJECT_ID", "CLOUD_TASKS_QUEUE_ID", "TASK_CALLER_SERVICE_ACCOUNT_EMAIL"):
             monkeypatch.delenv(key, raising=False)
         monkeypatch.setenv("SESSION_SECRET", "test-secret")
         monkeypatch.setenv("ALLOWED_EMAILS", "me@example.com")

@@ -23,7 +23,7 @@ class Config:
     queue_id: str
     worker_url: str
     task_audience_url: str
-    # 以下、旧 SERVICE_ACCOUNT_EMAIL が兼ねていた 3 つの役割を分けたもの。
+    # かつて SERVICE_ACCOUNT_EMAIL 1 つが兼ねていた 3 つの役割。本来別の主体なので分けてある。
     # task_caller: 投入するタスクの oidcToken.serviceAccountEmail に指定する caller SA（web）
     task_caller_service_account_email: str
     # allowed_task: worker が受け付ける caller SA の許可リスト（worker）
@@ -116,23 +116,14 @@ class Config:
         )
 
 
-def _legacy_service_account_email() -> str:
-    """旧 SERVICE_ACCOUNT_EMAIL。
-
-    1 つの変数が「タスクの caller SA」「受け付ける caller SA」「署名付き URL の署名者」の
-    3 つを兼ねていた。Terraform を新しい変数へ切り替えるまでの移行用で、適用後に削除する。
-    """
-    return os.getenv("SERVICE_ACCOUNT_EMAIL", "").strip()
-
-
 def _task_caller_email() -> str:
     """投入するタスクに指定する caller SA。"""
-    return os.getenv("TASK_CALLER_SERVICE_ACCOUNT_EMAIL", "").strip() or _legacy_service_account_email()
+    return os.getenv("TASK_CALLER_SERVICE_ACCOUNT_EMAIL", "").strip()
 
 
 def _signing_email() -> str:
     """GCS 署名付き URL の署名者（＝このプロセス自身の実行 SA）。"""
-    return os.getenv("SIGNING_SERVICE_ACCOUNT_EMAIL", "").strip() or _legacy_service_account_email()
+    return os.getenv("SIGNING_SERVICE_ACCOUNT_EMAIL", "").strip()
 
 
 def _allowed_task_service_accounts(server_role: str) -> list[str]:
@@ -143,9 +134,6 @@ def _allowed_task_service_accounts(server_role: str) -> list[str]:
     消失として現れないよう、起動時に落とす。
     """
     allowed = _split_env("ALLOWED_TASK_SERVICE_ACCOUNTS")
-    if not allowed:
-        legacy = _legacy_service_account_email()
-        allowed = [legacy] if legacy else []
     if not allowed and server_role in (SERVER_ROLE_BOTH, SERVER_ROLE_WORKER):
         raise RuntimeError("ALLOWED_TASK_SERVICE_ACCOUNTS が設定されていません（worker 面の OIDC 検証に必須です）")
     return allowed
