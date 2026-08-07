@@ -54,8 +54,17 @@ jobs:
 
       - name: Import sanity check
         env:
-          # create_app() は起動時に SESSION_SECRET を必須で要求するため、CIでのimport確認用にダミー値を渡す
+          # app/main.py は import 時に create_app() を実行するため、この確認には
+          # 起動に必要な設定が一式要る。いずれも CI 用のダミー値。
+          #
+          # SESSION_SECRET: Web 面が必須で要求する。
+          # SERVER_ROLE:    既定値を持たない。未設定を「両方」に落とすと、本番の env が
+          #                 1 つ欠けただけで公開 web に /tasks/* が復活するため。
+          # ALLOWED_TASK_SERVICE_ACCOUNTS: both は worker 面を含み、許可リストが空だと
+          #                 verify_task_caller が全拒否になる（fail-closed）ため起動時に落ちる。
           SESSION_SECRET: "ci-dummy-session-secret"
+          SERVER_ROLE: "both"
+          ALLOWED_TASK_SERVICE_ACCOUNTS: "ci-dummy@example.iam.gserviceaccount.com"
         run: python -c "import app.main"
 
       - name: Run tests

@@ -68,7 +68,10 @@ Cloud Run (同一サービス / worker エンドポイント)
 | `GCP_PROJECT_ID` | ✅ | GCP プロジェクト ID |
 | `GCS_BUCKET` | ✅ | 入出力に使う GCS バケット名 |
 | `CLOUD_TASKS_QUEUE_ID` | ✅ | Cloud Tasks キュー ID |
-| `SERVICE_ACCOUNT_EMAIL` | ✅ | OIDC 認証用サービスアカウント |
+| `SERVER_ROLE` | ✅ | このプロセスが担う役割。`web` / `worker` / `both`。未設定と未知の値は起動時エラー |
+| `TASK_CALLER_SERVICE_ACCOUNT_EMAIL` | web で必須 | 投入するタスクに指定する caller SA。トークンを生成して付与するのは Cloud Tasks であって、このサービスではありません |
+| `ALLOWED_TASK_SERVICE_ACCOUNTS` | worker で必須 | worker が受け付ける caller SA の許可リスト（カンマ区切り）。空だと全リクエストを拒否します（fail-closed） |
+| `SIGNING_SERVICE_ACCOUNT_EMAIL` | web で必須 | GCS 署名付き URL の署名者。IAM SignBlob で自分を借用するため、**このサービス自身の実行 SA** を指定します |
 | `SERVICE_URL` | ✅ | Cloud Run サービスの URL |
 | `GOOGLE_CLIENT_ID` | ✅ | Google OAuth2 クライアント ID |
 | `GOOGLE_CLIENT_SECRET` | ✅ | Google OAuth2 クライアントシークレット |
@@ -130,7 +133,10 @@ gcloud run services update lyric-video \
   --set-env-vars "\
 GCS_BUCKET=your-bucket,\
 CLOUD_TASKS_QUEUE_ID=lyric-video-queue,\
-SERVICE_ACCOUNT_EMAIL=sa@project.iam.gserviceaccount.com,\
+SERVER_ROLE=both,\
+TASK_CALLER_SERVICE_ACCOUNT_EMAIL=sa@project.iam.gserviceaccount.com,\
+ALLOWED_TASK_SERVICE_ACCOUNTS=sa@project.iam.gserviceaccount.com,\
+SIGNING_SERVICE_ACCOUNT_EMAIL=sa@project.iam.gserviceaccount.com,\
 SERVICE_URL=https://your-service-url,\
 GOOGLE_CLIENT_ID=your-client-id,\
 GOOGLE_CLIENT_SECRET=your-client-secret,\
@@ -170,8 +176,13 @@ env に参照が残っていると使っていなくてもアクセス権が要�
 | `SESSION_SECRET` | 要 | **不要**（`SERVER_ROLE=worker` は OAuth もセッションも使わない） |
 | `SLACK_WEBHOOK_URL` | **不要**（通知するのは worker だけ） | 要 |
 
-> **`SERVICE_ACCOUNT_EMAIL` は「呼び出し元」を指します。** `verify_task_caller` の第 3 引数として
-> 使われるため、**worker 側には worker 自身ではなく web の SA** を設定してください。
+> **`ALLOWED_TASK_SERVICE_ACCOUNTS` には worker 自身ではなく web の SA を書きます。**
+> worker が受け付けるべき呼び出し元は、タスクを投入した web 側だからです。空のまま起動すると
+> `verify_task_caller` が全リクエストを拒否し、キューはリトライを使い切ってタスクを捨てるため、
+> 設定漏れは起動時エラーにしてあります。
+>
+> かつては `SERVICE_ACCOUNT_EMAIL` 1 つが「タスクの caller」「受け付ける caller」「署名付き URL の
+> 署名者」の 3 つを兼ねていました。3 つは本来別の主体なので、変数を分けてあります。
 
 > **素材バケットは読み取りだけで足ります。** `storage.objectAdmin` は使わないでください
 > （オブジェクト ACL の操作まで許します）。削除を含まない読み取り専用ロールを選んでください。

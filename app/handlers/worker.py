@@ -70,7 +70,7 @@ def process_task():
     pipeline = current_app.pipeline
 
     auth_header = request.headers.get("Authorization", "")
-    if not verify_task_caller(auth_header, cfg.task_audience_url, cfg.service_account_email):
+    if not verify_task_caller(auth_header, cfg.task_audience_url, cfg.allowed_task_service_accounts):
         return jsonify({"error": "Unauthorized"}), 401
 
     try:
@@ -122,7 +122,7 @@ def process_youtube():
     uploader = current_app.youtube_uploader
 
     auth_header = request.headers.get("Authorization", "")
-    if not verify_task_caller(auth_header, cfg.task_audience_url, cfg.service_account_email):
+    if not verify_task_caller(auth_header, cfg.task_audience_url, cfg.allowed_task_service_accounts):
         return jsonify({"error": "Unauthorized"}), 401
 
     if uploader is None:

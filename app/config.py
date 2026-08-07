@@ -3,9 +3,10 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 
-# SERVER_ROLE が取りうる値。空文字は「web と worker の両方を提供する」を意味し、
-# ローカル開発と、分離前の構成での互換動作に使う。
-SERVER_ROLE_BOTH = ""
+# SERVER_ROLE が取りうる値。明示が必須で、未設定は起動時エラーにする。
+# 未設定を「両方」とみなすと、本番の環境変数が 1 つ欠けただけで公開 web 側に
+# /tasks/* が復活してしまう。both はローカル開発でだけ選ぶ。
+SERVER_ROLE_BOTH = "both"
 SERVER_ROLE_WEB = "web"
 SERVER_ROLE_WORKER = "worker"
 _SERVER_ROLES = (SERVER_ROLE_BOTH, SERVER_ROLE_WEB, SERVER_ROLE_WORKER)
@@ -22,7 +23,14 @@ class Config:
     queue_id: str
     worker_url: str
     task_audience_url: str
-    service_account_email: str
+    # 以下、旧 SERVICE_ACCOUNT_EMAIL が兼ねていた 3 つの役割を分けたもの。
+    # task_caller: 投入するタスクの oidcToken.serviceAccountEmail に指定する caller SA（web）
+    task_caller_service_account_email: str
+    # allowed_task: worker が受け付ける caller SA の許可リスト（worker）
+    allowed_task_service_accounts: list[str]
+    # signing: GCS 署名付き URL の署名者。IAM SignBlob で自分を借用するため、
+    # **そのプロセス自身の実行 SA** でなければならない（web）。
+    signing_service_account_email: str
     gcs_bucket: str
     gcs_output_prefix: str
     slack_webhook_url: str
@@ -65,7 +73,9 @@ class Config:
         """環境変数からアプリケーション設定を読み込む。"""
         server_role = os.getenv("SERVER_ROLE", "").strip().lower()
         if server_role not in _SERVER_ROLES:
-            raise RuntimeError(f"SERVER_ROLE ({server_role!r}) は 'web', 'worker', または未設定である必要があります")
+            raise RuntimeError(
+                f"SERVER_ROLE ({server_role!r}) は 'web', 'worker', 'both' のいずれかである必要があります"
+            )
         service_url = os.getenv("SERVICE_URL", "http://localhost:8080").rstrip("/")
         worker_url = os.getenv("WORKER_URL", "").strip()
         if not worker_url:
@@ -80,7 +90,9 @@ class Config:
             queue_id=os.getenv("CLOUD_TASKS_QUEUE_ID", ""),
             worker_url=worker_url,
             task_audience_url=task_audience_url,
-            service_account_email=os.getenv("SERVICE_ACCOUNT_EMAIL", ""),
+            task_caller_service_account_email=_task_caller_email(),
+            allowed_task_service_accounts=_allowed_task_service_accounts(server_role),
+            signing_service_account_email=_signing_email(),
             gcs_bucket=os.getenv("GCS_BUCKET", ""),
             gcs_output_prefix=os.getenv("GCS_OUTPUT_PREFIX", "lyric-video/output"),
             slack_webhook_url=os.getenv("SLACK_WEBHOOK_URL", ""),
@@ -102,6 +114,41 @@ class Config:
             allowed_domains=_split_env("ALLOWED_DOMAINS"),
             allowed_m2m_service_accounts=_split_env("ALLOWED_M2M_SERVICE_ACCOUNTS"),
         )
+
+
+def _legacy_service_account_email() -> str:
+    """旧 SERVICE_ACCOUNT_EMAIL。
+
+    1 つの変数が「タスクの caller SA」「受け付ける caller SA」「署名付き URL の署名者」の
+    3 つを兼ねていた。Terraform を新しい変数へ切り替えるまでの移行用で、適用後に削除する。
+    """
+    return os.getenv("SERVICE_ACCOUNT_EMAIL", "").strip()
+
+
+def _task_caller_email() -> str:
+    """投入するタスクに指定する caller SA。"""
+    return os.getenv("TASK_CALLER_SERVICE_ACCOUNT_EMAIL", "").strip() or _legacy_service_account_email()
+
+
+def _signing_email() -> str:
+    """GCS 署名付き URL の署名者（＝このプロセス自身の実行 SA）。"""
+    return os.getenv("SIGNING_SERVICE_ACCOUNT_EMAIL", "").strip() or _legacy_service_account_email()
+
+
+def _allowed_task_service_accounts(server_role: str) -> list[str]:
+    """worker が受け付ける caller SA の許可リスト。
+
+    空のまま worker を起動すると verify_task_caller が全リクエストを拒否し、
+    Cloud Tasks 側はリトライを使い切ってタスクを捨てる。設定漏れがタスクの静かな
+    消失として現れないよう、起動時に落とす。
+    """
+    allowed = _split_env("ALLOWED_TASK_SERVICE_ACCOUNTS")
+    if not allowed:
+        legacy = _legacy_service_account_email()
+        allowed = [legacy] if legacy else []
+    if not allowed and server_role in (SERVER_ROLE_BOTH, SERVER_ROLE_WORKER):
+        raise RuntimeError("ALLOWED_TASK_SERVICE_ACCOUNTS が設定されていません（worker 面の OIDC 検証に必須です）")
+    return allowed
 
 
 def _require_env(key: str) -> str:
