@@ -187,6 +187,22 @@ env に参照が残っていると使っていなくてもアクセス権が要�
 > **素材バケットは読み取りだけで足ります。** `storage.objectAdmin` は使わないでください
 > （オブジェクト ACL の操作まで許します）。削除を含まない読み取り専用ロールを選んでください。
 
+**worker の到達経路とタイムアウト。** worker サービスは `--ingress=internal` で、Cloud Tasks
+からの呼び出しだけがネットワーク層を通ります（同一プロジェクトかつ既定の `run.app` URL である
+ことが条件で、どちらも満たしています）。その先で IAM の invoker、さらに `verify_task_caller` の
+許可リストが検査され、防御は三段になります。
+
+タスク 1 件の実行時間の上限は `app/adapters/task_queue.py` の `_DISPATCH_DEADLINE_SEC`
+（30 分）が決めます。**これを指定しないと Cloud Tasks の既定 10 分が上限になり、Cloud Run の
+`--timeout` をいくら長くしてもそこで打ち切られます。** `lyric-video-queue` は
+`max_attempts = 1` なので、打ち切られたタスクは再試行されず失われます。
+
+> **Go 版の 3 アプリと違い、ジョブ全体の上限（`PIPELINE_TIMEOUT` 相当）を持ちません。**
+> 「アプリが自分で先に諦めて失敗を記録する」経路が無いということです。ffmpeg の各ステップには
+> 個別のタイムアウトがあります（`app/video_merge.py` の `_SUBPROCESS_TIMEOUT_SEC`）が、
+> 合計が 30 分に収まる保証はありません。合成が長引くようなら、まずここに全体の上限を入れて
+> ください。
+
 ---
 
 ## 🔌 エンドポイント

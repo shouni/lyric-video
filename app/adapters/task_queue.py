@@ -4,8 +4,18 @@ import json
 import logging
 
 from google.cloud import tasks_v2
+from google.protobuf import duration_pb2
 
 logger = logging.getLogger(__name__)
+
+# ワーカーの応答を待つ時間。「待つ時間」ではなく **ワーカーの実行時間の実効上限** で、
+# これを超えると処理中でも Cloud Tasks は待受を打ち切る。
+#
+# 未指定だと Cloud Tasks の既定 10 分が上限になり、Cloud Run 側の --timeout を
+# いくら伸ばしても超えられない。字幕合成は ffmpeg を通すため 10 分に収まる保証がなく、
+# 超えた分は lyric-video-queue が max_attempts = 1 のため再試行もされず失われる。
+# HTTP ターゲットの上限である 30 分を取り、Cloud Run の timeout (1800s) と揃える。
+_DISPATCH_DEADLINE_SEC = 1800
 
 
 class CloudTasksQueue:
@@ -37,7 +47,8 @@ class CloudTasksQueue:
                     "service_account_email": self._service_account_email,
                     "audience": self._audience,
                 },
-            }
+            },
+            "dispatch_deadline": duration_pb2.Duration(seconds=_DISPATCH_DEADLINE_SEC),
         }
         response = self._client.create_task(request={"parent": self._parent, "task": task})
         logger.info("Task enqueued name=%s", response.name)
