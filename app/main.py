@@ -76,6 +76,7 @@ def create_app() -> Flask:
         ap_mv_bucket=cfg.ap_mv_bucket,
         ap_music_bucket=cfg.ap_music_bucket,
         video_whisper_model=cfg.video_whisper_model,
+        pipeline_timeout_sec=cfg.pipeline_timeout_sec,
     )
     app.youtube_uploader = youtube_uploader
 

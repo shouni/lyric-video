@@ -15,7 +15,10 @@ logger = logging.getLogger(__name__)
 # いくら伸ばしても超えられない。字幕合成は ffmpeg を通すため 10 分に収まる保証がなく、
 # 超えた分は lyric-video-queue が max_attempts = 1 のため再試行もされず失われる。
 # HTTP ターゲットの上限である 30 分を取り、Cloud Run の timeout (1800s) と揃える。
-_DISPATCH_DEADLINE_SEC = 1800
+#
+# これはタイムアウトの三段の**真ん中**。PIPELINE_TIMEOUT はこれより短くする
+# （config._pipeline_timeout_sec が起動時に検査する）。理由は pipeline/deadline.py。
+DISPATCH_DEADLINE_SEC = 1800
 
 
 class CloudTasksQueue:
@@ -48,7 +51,7 @@ class CloudTasksQueue:
                     "audience": self._audience,
                 },
             },
-            "dispatch_deadline": duration_pb2.Duration(seconds=_DISPATCH_DEADLINE_SEC),
+            "dispatch_deadline": duration_pb2.Duration(seconds=DISPATCH_DEADLINE_SEC),
         }
         response = self._client.create_task(request={"parent": self._parent, "task": task})
         logger.info("Task enqueued name=%s", response.name)
