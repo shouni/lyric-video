@@ -1,7 +1,15 @@
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass, field
+
+from app.adapters.task_queue import DISPATCH_DEADLINE_SEC
+
+# ジョブ 1 件の実行時間の上限の既定値。フリートの Go 実装（ap-comp / ap-mv / ap-story）が
+# 本番で明示している 25m に揃えてある。dispatch_deadline（30 分）の手前で
+# **アプリが自分から諦める**ための値。理由は app/pipeline/deadline.py。
+_DEFAULT_PIPELINE_TIMEOUT = "25m"
 
 # SERVER_ROLE が取りうる値。明示が必須で、未設定は起動時エラーにする。
 # 未設定を「両方」とみなすと、本番の環境変数が 1 つ欠けただけで公開 web 側に
@@ -35,6 +43,9 @@ class Config:
     gcs_output_prefix: str
     slack_webhook_url: str
     whisper_model: str
+    # ジョブ1件(ダウンロード〜字幕生成〜焼き込み〜アップロード)の実行時間の上限。
+    # 0以下は無制限。詳細は app/pipeline/deadline.py。
+    pipeline_timeout_sec: float
     # video合成モードのWhisperモデル。曲全体を1本で強制アライメントするため、
     # Cloud Runのメモリと処理時間に収まる小さめのモデルを既定にしている。
     video_whisper_model: str
@@ -97,6 +108,7 @@ class Config:
             gcs_output_prefix=os.getenv("GCS_OUTPUT_PREFIX", "lyric-video/output"),
             slack_webhook_url=os.getenv("SLACK_WEBHOOK_URL", ""),
             whisper_model=os.getenv("WHISPER_MODEL", "large-v3"),
+            pipeline_timeout_sec=_pipeline_timeout_sec(server_role),
             video_whisper_model=os.getenv("VIDEO_WHISPER_MODEL", "small"),
             ap_mv_bucket=os.getenv("AP_MV_BUCKET", "ap-mv"),
             ap_music_bucket=os.getenv("AP_MUSIC_BUCKET", "ap-music"),
@@ -137,6 +149,48 @@ def _allowed_task_service_accounts(server_role: str) -> list[str]:
     if not allowed and server_role in (SERVER_ROLE_BOTH, SERVER_ROLE_WORKER):
         raise RuntimeError("ALLOWED_TASK_SERVICE_ACCOUNTS が設定されていません（worker 面の OIDC 検証に必須です）")
     return allowed
+
+
+_DURATION = re.compile(r"^\s*(?P<value>\d+(?:\.\d+)?)\s*(?P<unit>ms|s|m|h)?\s*$")
+_UNIT_SECONDS = {"ms": 0.001, "s": 1.0, "m": 60.0, "h": 3600.0}
+
+
+def parse_duration(text: str) -> float:
+    """`25m` / `1500s` / `1500` のような表記を秒へ変換する。
+
+    Go 実装（ap-comp / ap-mv / ap-story）の PIPELINE_TIMEOUT が `25m` 形式なので、
+    同じ値をそのまま書けるようにしてある。Terraform 側（ap-infra）が全アプリへ
+    同じ表記で env を配れるほうが、フリート全体を見たときに差が読める。
+    単位を省いた数値は秒として扱う。
+    """
+    match = _DURATION.match(text)
+    if not match:
+        raise ValueError(f"duration として解釈できません: {text!r}（例: '25m', '1500s', '1500'）")
+    return float(match["value"]) * _UNIT_SECONDS[match["unit"] or "s"]
+
+
+def _pipeline_timeout_sec(server_role: str) -> float:
+    """ジョブ 1 件の実行時間の上限を読み、三段の大小関係を起動時に検査する。
+
+    ★ PIPELINE_TIMEOUT < dispatch_deadline を**ここで機械的に確かめる**。
+      両方の値が同時に見えるのはこの関数だけで、逆転していると
+      「Cloud Tasks が先に打ち切る → 失敗も通知も残らない」という、
+      いちばん気付きにくい壊れ方をする（app/pipeline/deadline.py 参照）。
+
+      検査するのは worker 面を持つ役割のときだけ。パイプラインを走らせないプロセスに
+      とっては無関係な値で、そこで落とすと web だけが起動しない事故になる。
+    """
+    raw = os.getenv("PIPELINE_TIMEOUT", "").strip() or _DEFAULT_PIPELINE_TIMEOUT
+    seconds = parse_duration(raw)
+
+    if seconds > 0 and server_role in (SERVER_ROLE_BOTH, SERVER_ROLE_WORKER) and seconds >= DISPATCH_DEADLINE_SEC:
+        raise RuntimeError(
+            f"PIPELINE_TIMEOUT ({raw} = {seconds:.0f}s) は dispatch_deadline "
+            f"({DISPATCH_DEADLINE_SEC}s) より短くしてください。"
+            "長いと Cloud Tasks が先にリクエストを打ち切り、失敗の記録も Slack 通知も残らず、"
+            "max_attempts = 1 なので再試行もされません。"
+        )
+    return seconds
 
 
 def _require_env(key: str) -> str:

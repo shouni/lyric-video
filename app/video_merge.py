@@ -13,9 +13,14 @@ from PIL import Image, ImageDraw
 from app.adapters import gcs
 from app.burn_subs import load_font
 from app.domain.music_layout import music_audio_uri
+from app.pipeline.deadline import Deadline
 
 logger = logging.getLogger(__name__)
 
+# ★ 以下は**1 ステップあたり**の上限。これを足し合わせてもジョブ全体の上限にはならない
+#   （trim + align + burn だけで 300 + 900 + 300 = 1500s、ダウンロードを足すと
+#   dispatch_deadline の 1800s に迫る）。ジョブ全体の上限は Deadline が別に持ち、
+#   下の _run が両者の短いほうを採る。理由は app/pipeline/deadline.py。
 _SUBPROCESS_TIMEOUT_SEC = 300.0
 # Whisperのモデルロード込みで動く可能性があるため、通常のffmpeg/ffprobe呼び出しより
 # 長いタイムアウトを与える。
@@ -46,6 +51,7 @@ def build(
     ap_mv_bucket: str = "ap-mv",
     ap_music_bucket: str = "ap-music",
     whisper_model: str = DEFAULT_WHISPER_MODEL,
+    deadline: Deadline | None = None,
 ) -> Path:
     """ap-mvの完成動画とap-musicの楽曲を合成し、字幕焼き込み済みMP4を作る。
 
@@ -81,8 +87,8 @@ def build(
     logger.info("Downloading music from %s", audio_uri)
     gcs.download(audio_uri, str(full_audio_path))
 
-    video_duration = _probe_duration(video_path)
-    video_width, video_height = _probe_dimensions(video_path)
+    video_duration = _probe_duration(video_path, deadline)
+    video_width, video_height = _probe_dimensions(video_path, deadline)
 
     trimmed_audio_path = work_dir / "section_audio.mp3"
     _run(
@@ -102,13 +108,14 @@ def build(
             str(trimmed_audio_path),
         ],
         "trim audio",
+        deadline=deadline,
     )
 
     reference_subs_path = work_dir / "reference_subtitles.ass"
     fontsize = _write_reference_subtitles(cuts_sorted, video_width, video_height, reference_subs_path)
 
     subs_path = work_dir / "section_subtitles.ass"
-    _align_with_whisper(trimmed_audio_path, reference_subs_path, subs_path, whisper_model)
+    _align_with_whisper(trimmed_audio_path, reference_subs_path, subs_path, whisper_model, deadline)
     _wrap_aligned_subtitles(subs_path, video_width, fontsize)
 
     _run(
@@ -137,6 +144,7 @@ def build(
             str(output_path),
         ],
         "burn subtitles and mux",
+        deadline=deadline,
     )
     return output_path
 
@@ -220,7 +228,11 @@ def _write_reference_subtitles(
 
 
 def _align_with_whisper(
-    audio_path: Path, reference_subs_path: Path, out_path: Path, whisper_model: str = DEFAULT_WHISPER_MODEL
+    audio_path: Path,
+    reference_subs_path: Path,
+    out_path: Path,
+    whisper_model: str = DEFAULT_WHISPER_MODEL,
+    deadline: Deadline | None = None,
 ) -> None:
     """align_subtitles.py(Whisper強制アライメント)でリファレンスASSの実際の発話時刻を求める。"""
     _run(
@@ -235,6 +247,7 @@ def _align_with_whisper(
         ],
         "align subtitles",
         timeout=_ALIGN_TIMEOUT_SEC,
+        deadline=deadline,
     )
 
 
@@ -331,7 +344,7 @@ def _wrap_karaoke_text(text: str, draw: ImageDraw.ImageDraw, font, max_width: fl
     return r"\N".join(lines)
 
 
-def _probe_dimensions(path: Path) -> tuple[int, int]:
+def _probe_dimensions(path: Path, deadline: Deadline | None = None) -> tuple[int, int]:
     result = _run(
         [
             "ffprobe",
@@ -346,6 +359,7 @@ def _probe_dimensions(path: Path) -> tuple[int, int]:
             str(path),
         ],
         "probe dimensions",
+        deadline=deadline,
     )
     output = result.stdout.strip()
     try:
@@ -358,10 +372,11 @@ def _probe_dimensions(path: Path) -> tuple[int, int]:
     return width, height
 
 
-def _probe_duration(path: Path) -> float:
+def _probe_duration(path: Path, deadline: Deadline | None = None) -> float:
     result = _run(
         ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(path)],
         "probe duration",
+        deadline=deadline,
     )
     output = result.stdout.strip()
     try:
@@ -373,7 +388,19 @@ def _probe_duration(path: Path) -> float:
     return duration
 
 
-def _run(cmd: list[str], step: str, timeout: float = _SUBPROCESS_TIMEOUT_SEC) -> subprocess.CompletedProcess:
+def _run(
+    cmd: list[str],
+    step: str,
+    timeout: float = _SUBPROCESS_TIMEOUT_SEC,
+    deadline: Deadline | None = None,
+) -> subprocess.CompletedProcess:
+    """1 ステップを実行する。ジョブ全体の締切があれば、待ち時間をその残りで頭打ちにする。
+
+    deadline を渡さない呼び出しは従来どおりステップ単体の上限だけで動く。
+    """
+    if deadline is not None:
+        # 残り時間のほうが短ければそちらを採る。使い切っていれば起動せず PipelineTimeout。
+        timeout = deadline.clamp(timeout, step)
     logger.info("Running %s: %s", step, shlex.join(cmd))
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)

@@ -38,10 +38,17 @@ python3 -m app.main
 
 # Dockerビルド
 docker build -t lyric-video .
-
-# Cloud Buildデプロイ
-gcloud builds submit --config=cloudbuild.yaml
 ```
+
+デプロイは `main` への push で Cloud Build のトリガー `build-lyric-video` が自動で走る。
+手で `gcloud builds submit` を打つ必要はない。
+
+**このリポジトリが所有するのはイメージだけ。** Cloud Run サービス 2 本・環境変数・実行 SA・
+シークレット参照・キュー・バケットは ap-infra（`~/GolandProjects/ap-infra` の
+`app_lyric_video.tf`）の Terraform が所有する。`cloudbuild.yaml` が `--image` しか
+渡していないのはそのため。**`gcloud run services update --set-env-vars` を打つと
+次の `terraform apply` で戻され、その間 ap-infra の毎日のドリフト検知が落ち続ける。**
+env を足したいときは、このリポジトリの `config.py` と ap-infra の tf の両方を触る。
 
 lint/format には ruff、テストには pytest を導入済み（`pyproject.toml`、CI: `.github/workflows/ci.yml`）。変更後は以下で確認する。
 
@@ -69,4 +76,6 @@ CI は Python 3.11（Dockerfile と同じ）で実行される。ローカルの
 - ユーザー向けエンドポイント（`/new`, `/jobs`, ...）は、ブラウザセッションに加えて `ALLOWED_M2M_SERVICE_ACCOUNTS` 経由のOIDC M2M認証（`app/adapters/oidc.py`）も受け付ける。M2M認証済みリクエストはCSRF検証をバイパスし、`Accept: application/json` を付けるとJSONを返す（MCPゲートウェイからの呼び出し用）。ap-comp の `/web/*` パターンと同じ設計。
 - GCS入出力パスやWhisperモデル等のデフォルト値は `app/config.py` の `Config.from_env` に集約されている。`source_type=video` の合成は曲全体を1本でアライメントするため、`WHISPER_MODEL` とは別の `VIDEO_WHISPER_MODEL`（既定 `small`）を使う。
 - `/new` 受付時の `meta.json` 保存は同期で行う。Cloud Run はレスポンス返却後にCPUが絞られるため、バックグラウンドスレッドでの保存は取りこぼす。
+- **タイムアウトは三段（`PIPELINE_TIMEOUT` < dispatch deadline <= Cloud Run の timeout）で、`PIPELINE_TIMEOUT` を必ずいちばん短く取る。** アプリが自分で先に諦めることでのみ `meta.json` に `failed` を書き Slack へ通知できる。Cloud Tasks に先に打ち切られるとプロセスごと SIGTERM で、失敗の記録も通知も残らず `running` のまま取り残される（`max_attempts = 1` なので再試行も無い）。締切は `app/pipeline/deadline.py` の `Deadline` が持ち、`PipelineRunner.run` が 1 つ作って全工程へ配る。`video_merge.py` の `_SUBPROCESS_TIMEOUT_SEC` 等は**1 ステップあたり**の上限で、足してもジョブ全体の上限にはならない（両者の短いほうが採られる）。不変条件は `app/config.py` が起動時に検査する。
+- サブプロセスを新しく足すときは `pipeline/runner.py` の `_run_subprocess` か `video_merge.py` の `_run` を通す。どちらも締切を受け取って待ち時間を頭打ちにする。`subprocess.run` / `Popen.wait()` を上限なしで直接呼ぶと、そこだけ三段の網から漏れる。
 - `app/align_subtitles.py` / `app/burn_subs.py` は姉妹リポジトリ `~/PycharmProjects/lyric-video-maker` のほぼコピー（差分はDocker用Linuxフォントパスと、maker側のみが持つ `--style-file`／lineモード）。片方を修正したらもう片方への移植を検討する。
