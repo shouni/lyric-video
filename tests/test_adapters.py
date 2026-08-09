@@ -1,8 +1,8 @@
-"""adapters 配下（GCS URI 解析 / job_store / YouTube URL 解析）のテスト。"""
+"""adapters 配下（GCS URI 解析 / job_store / Cloud Tasks 投入 / YouTube URL 解析）のテスト。"""
 
 import pytest
 
-from app.adapters import gcs, job_store
+from app.adapters import gcs, job_store, task_queue
 from app.adapters.youtube import extract_video_id
 
 
@@ -59,6 +59,53 @@ class TestJobStoreUpdate:
 
         monkeypatch.setattr(job_store, "save", _raise)
         assert job_store.update("gs://b/j/meta.json", {"status": "x"}) is False
+
+
+class TestCloudTasksQueue:
+    """投入されるタスクの中身を検証する。"""
+
+    @staticmethod
+    def _queue(monkeypatch, captured):
+        class FakeClient:
+            def queue_path(self, project, location, queue):
+                return f"projects/{project}/locations/{location}/queues/{queue}"
+
+            def create_task(self, request):
+                captured.update(request)
+                return type("Response", (), {"name": "task-1"})()
+
+        monkeypatch.setattr(task_queue.tasks_v2, "CloudTasksClient", FakeClient)
+        return task_queue.CloudTasksQueue(
+            project_id="p",
+            location_id="asia-northeast1",
+            queue_id="q",
+            worker_url="https://worker.example.com/tasks/render",
+            service_account_email="caller@example.iam.gserviceaccount.com",
+            audience="https://worker.example.com",
+        )
+
+    def test_sets_dispatch_deadline(self, monkeypatch):
+        """未指定だと Cloud Tasks の既定 10 分が実行時間の上限になり、
+        超えた分は max_attempts = 1 のため再試行されずに失われる。"""
+        captured = {}
+        self._queue(monkeypatch, captured).enqueue({"job_id": "j"})
+
+        assert captured["task"]["dispatch_deadline"].seconds == 1800
+
+    def test_dispatch_deadline_stays_within_http_target_limit(self, monkeypatch):
+        """HTTP ターゲットの上限は 30 分。超えると Cloud Tasks が InvalidArgument を返す。"""
+        captured = {}
+        self._queue(monkeypatch, captured).enqueue({"job_id": "j"})
+
+        assert 15 <= captured["task"]["dispatch_deadline"].seconds <= 1800
+
+    def test_keeps_oidc_and_target(self, monkeypatch):
+        captured = {}
+        self._queue(monkeypatch, captured).enqueue({"job_id": "j"})
+
+        request = captured["task"]["http_request"]
+        assert request["url"] == "https://worker.example.com/tasks/render"
+        assert request["oidc_token"]["audience"] == "https://worker.example.com"
 
 
 class TestExtractVideoId:
