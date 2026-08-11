@@ -39,8 +39,8 @@ EXPOSE 8080
 
 FROM base AS web
 
-COPY . .
-RUN chown -R appuser /app
+# chown -R を使わない理由は worker ステージ側の ★ を参照。
+COPY --chown=appuser:appuser . .
 USER appuser
 
 CMD ["gunicorn", "--bind", "0.0.0.0:8080", "--workers", "1", "--threads", "8", "--timeout", "300", "app.main:app"]
@@ -61,10 +61,16 @@ RUN pip install --no-cache-dir -r requirements-worker.txt
 
 ARG WHISPER_MODEL=large-v3
 ENV XDG_CACHE_HOME=/app/.cache
+
+# ★ モデルは appuser 所有のディレクトリへ appuser 自身に落とさせる。
+#   root で落として後から chown -R すると、overlayfs が所有者変更のたびに
+#   ファイルを上の層へコピーするため、2.84GB のモデルがもう一度丸ごと積まれる
+#   （イメージが 6GB → 8.9GB になり、デプロイのたびに同量が増えていた）。
+#   ここを chown -R に戻さないこと。
+RUN install -d -o appuser -g appuser /app/.cache
+USER appuser
 RUN python3 -c "import os, whisper; whisper._download(whisper._MODELS['${WHISPER_MODEL}'], os.path.join(os.environ['XDG_CACHE_HOME'], 'whisper'), False)"
 
-COPY . .
-RUN chown -R appuser /app
-USER appuser
+COPY --chown=appuser:appuser . .
 
 CMD ["gunicorn", "--bind", "0.0.0.0:8080", "--workers", "1", "--threads", "8", "--timeout", "1800", "app.main:app"]
