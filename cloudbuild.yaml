@@ -1,85 +1,83 @@
 substitutions:
-  _ENV_PREFIX: develop
-  _REGION: asia-northeast1
-  _IMAGE_BASE: asia-northeast1-docker.pkg.dev
-  _REPO_PATH: ap-repo/lyric-video
-  _WEB_SERVICE_NAME: lyric-video
-  _WORKER_SERVICE_NAME: lyric-video-worker
-  _TAG: ${_ENV_PREFIX}-${SHORT_SHA}
-  # ap-infra の app_lyric_video.tf がサービス新規作成時に参照する固定タグ。
-  # web/worker 分割で push が落ち、tf 側だけが :develop-latest-web / -worker を
-  # 指したまま存在しない状態になっていた。他アプリと同じ _CACHE_TAG 規約に揃える。
-  _CACHE_TAG: ${_ENV_PREFIX}-latest
-  _WHISPER_MODEL: large-v3
+  _ENV_PREFIX: 'develop'
+  _REGION: 'asia-northeast1'
+  _IMAGE_BASE: 'asia-northeast1-docker.pkg.dev'
+  _REPO_PATH: 'ap-repo/lyric-video'
+  _WEB_SERVICE_NAME: 'lyric-video'
+  _WORKER_SERVICE_NAME: 'lyric-video-worker'
+  _TAG: '${_ENV_PREFIX}-${SHORT_SHA}'
+  _CACHE_TAG: '${_ENV_PREFIX}-latest'
+  _WHISPER_MODEL: 'large-v3'
+
 steps:
-- name: gcr.io/cloud-builders/docker
-  id: Setup Buildx
-  args:
-  - buildx
-  - create
-  - --driver
-  - docker-container
-  - --name
-  - builder
-  - --use
-- name: gcr.io/cloud-builders/docker
-  id: Build Worker Image
-  args:
-  - buildx
-  - build
-  - --target
-  - worker
-  - -t
-  - ${_IMAGE_BASE}/${PROJECT_ID}/${_REPO_PATH}:${_TAG}-worker
-  - -t
-  - ${_IMAGE_BASE}/${PROJECT_ID}/${_REPO_PATH}:${_CACHE_TAG}-worker
-  - --cache-from
-  - type=registry,ref=${_IMAGE_BASE}/${PROJECT_ID}/${_REPO_PATH}:buildcache-worker
-  - --build-arg
-  - WHISPER_MODEL=${_WHISPER_MODEL}
-  - --cache-to
-  - type=registry,ref=${_IMAGE_BASE}/${PROJECT_ID}/${_REPO_PATH}:buildcache-worker,mode=max
-  - --push
-  - .
-- name: gcr.io/cloud-builders/docker
-  id: Build Web Image
-  args:
-  - buildx
-  - build
-  - --target
-  - web
-  - -t
-  - ${_IMAGE_BASE}/${PROJECT_ID}/${_REPO_PATH}:${_TAG}-web
-  - -t
-  - ${_IMAGE_BASE}/${PROJECT_ID}/${_REPO_PATH}:${_CACHE_TAG}-web
-  - --cache-from
-  - type=registry,ref=${_IMAGE_BASE}/${PROJECT_ID}/${_REPO_PATH}:buildcache-web
-  - --cache-to
-  - type=registry,ref=${_IMAGE_BASE}/${PROJECT_ID}/${_REPO_PATH}:buildcache-web,mode=max
-  - --push
-  - .
-- name: gcr.io/cloud-builders/gcloud
-  id: Deploy Worker to Cloud Run
-  entrypoint: gcloud
-  args:
-  - run
-  - deploy
-  - ${_WORKER_SERVICE_NAME}
-  - --image=${_IMAGE_BASE}/${PROJECT_ID}/${_REPO_PATH}:${_TAG}-worker
-  - --region=${_REGION}
-  - --platform=managed
-  - --quiet
-- name: gcr.io/cloud-builders/gcloud
-  id: Deploy Web to Cloud Run
-  entrypoint: gcloud
-  args:
-  - run
-  - deploy
-  - ${_WEB_SERVICE_NAME}
-  - --image=${_IMAGE_BASE}/${PROJECT_ID}/${_REPO_PATH}:${_TAG}-web
-  - --region=${_REGION}
-  - --platform=managed
-  - --quiet
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'Setup Buildx'
+    args: ['buildx', 'create', '--driver', 'docker-container', '--name', 'builder', '--use']
+
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'Build Worker Image'
+    args:
+      - 'buildx'
+      - 'build'
+      - '--target'
+      - 'worker'
+      - '-t'
+      - '${_IMAGE_BASE}/${PROJECT_ID}/${_REPO_PATH}:${_TAG}-worker'
+      - '-t'
+      - '${_IMAGE_BASE}/${PROJECT_ID}/${_REPO_PATH}:${_CACHE_TAG}-worker'
+      - '--cache-from'
+      - 'type=registry,ref=${_IMAGE_BASE}/${PROJECT_ID}/${_REPO_PATH}:buildcache-worker'
+      - '--build-arg'
+      - 'WHISPER_MODEL=${_WHISPER_MODEL}'
+      - '--cache-to'
+      - 'type=registry,ref=${_IMAGE_BASE}/${PROJECT_ID}/${_REPO_PATH}:buildcache-worker,mode=max'
+      - '--push'
+      - '.'
+
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'Build Web Image'
+    args:
+      - 'buildx'
+      - 'build'
+      - '--target'
+      - 'web'
+      - '-t'
+      - '${_IMAGE_BASE}/${PROJECT_ID}/${_REPO_PATH}:${_TAG}-web'
+      - '-t'
+      - '${_IMAGE_BASE}/${PROJECT_ID}/${_REPO_PATH}:${_CACHE_TAG}-web'
+      - '--cache-from'
+      - 'type=registry,ref=${_IMAGE_BASE}/${PROJECT_ID}/${_REPO_PATH}:buildcache-web'
+      - '--cache-to'
+      - 'type=registry,ref=${_IMAGE_BASE}/${PROJECT_ID}/${_REPO_PATH}:buildcache-web,mode=max'
+      - '--push'
+      - '.'
+
+  - name: 'gcr.io/cloud-builders/gcloud'
+    id: 'Deploy Worker to Cloud Run'
+    entrypoint: 'gcloud'
+    waitFor: ['Build Worker Image']
+    args:
+      - 'run'
+      - 'deploy'
+      - '${_WORKER_SERVICE_NAME}'
+      - '--image=${_IMAGE_BASE}/${PROJECT_ID}/${_REPO_PATH}:${_TAG}-worker'
+      - '--region=${_REGION}'
+      - '--platform=managed'
+      - '--quiet'
+
+  - name: 'gcr.io/cloud-builders/gcloud'
+    id: 'Deploy Web to Cloud Run'
+    entrypoint: 'gcloud'
+    waitFor: ['Build Web Image']
+    args:
+      - 'run'
+      - 'deploy'
+      - '${_WEB_SERVICE_NAME}'
+      - '--image=${_IMAGE_BASE}/${PROJECT_ID}/${_REPO_PATH}:${_TAG}-web'
+      - '--region=${_REGION}'
+      - '--platform=managed'
+      - '--quiet'
+
 options:
-  machineType: E2_HIGHCPU_8
+  machineType: 'E2_HIGHCPU_8'
   logging: CLOUD_LOGGING_ONLY
