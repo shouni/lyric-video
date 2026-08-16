@@ -323,25 +323,48 @@ Cloud Run の timeout をいくら伸ばしてもそこで打ち切られます�
 - **認証情報** の OAuth クライアント（ウェブ アプリケーション）に
   `http://localhost:8080/` をリダイレクト URI として追加
 
-**2. トークン取得**
+**2. トークン取得と Secret Manager の更新**
 
 ```sh
+source .venv/bin/activate
+pip install -r requirements-dev.txt   # 初回のみ
+
 export GOOGLE_CLIENT_ID=your-client-id
 export GOOGLE_CLIENT_SECRET=your-client-secret
 python3 scripts/get_youtube_token.py
 ```
 
 ブラウザが開くので、YouTube チャンネルのアカウントでログインして承認します。
+承認後、`YOUTUBE_REFRESH_TOKEN` に新しいバージョンが追加されます。**トークンは画面に出ません**
+（端末の履歴やスクロールバックへ残さないため）。
 
-**3. Secret Manager に新しいバージョンを追加**
+スクリプトが使う `google-auth-oauthlib` と `google-cloud-secret-manager` は `requirements-dev.txt`
+にあります。ローカルで動かすだけのものなので、本番イメージ（`requirements.txt` /
+`requirements-worker.txt`）には入れていません。
+
+付与されたスコープはその場に表示され、要求した 3 つのどれかが欠けていれば書き込まずに止まります。
+同意画面はスコープごとにチェックを外せるため、外したまま承認するとアップロードは通るのに
+コメント投稿だけ 403 になります。
+
+書き込み先は ADC の既定プロジェクト（`GOOGLE_CLOUD_PROJECT` があればそちら）です。
+古いバージョンには触らないので、整理する場合は `gcloud secrets versions destroy` で別途行ってください。
+
+**3. 反映**
+
+**基本は何もしなくて構いません。** 参照は `latest` で、Cloud Run がそれを解決するのは
+インスタンスの起動時です。env はプロセス起動時に決まるので動いているインスタンスの値は変わりませんが、
+最小インスタンスは 0 なので、しばらくすると入れ替わって新しい値になります。
+
+その待ち時間も許容できない場合だけ、新しいリビジョンを出してください。
 
 ```sh
-printf '%s' 'your-refresh-token' \
-  | gcloud secrets versions add YOUTUBE_REFRESH_TOKEN --data-file=- --project=<project-id>
+gcloud run services update ap-comp --region=asia-northeast1 \
+  --update-secrets=YOUTUBE_REFRESH_TOKEN=YOUTUBE_REFRESH_TOKEN:latest
 ```
 
-参照は `latest` なので、以降に起動するインスタンスから新しい値になります。
-即座に切り替えたい場合は新しいリビジョンをデプロイしてください。
+同じ内容を書き直してリビジョンだけを入れ替えるやり方で、`ap-mcp` の `scripts/rotate_mcp_key.sh`
+と同じです。適用後の内容は Terraform の宣言と同一なのでドリフトは出ません。
+このトークンを読むのは `ap-comp`（web 面）だけで、worker 面はマウントしていません。
 
 > 取得後は `http://localhost:8080/` をリダイレクト URI から削除することを推奨します。
 
