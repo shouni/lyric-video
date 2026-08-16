@@ -117,8 +117,7 @@ def _add_secret_version(project: str, token: str) -> str:
     """新しいバージョンを追加し、そのバージョン番号を返す。
 
     古いバージョンには触らない。latest は最新のものを指すので放っておいても
-    読まれることはなく、整理が要るなら `gcloud secrets versions destroy` で
-    別途行う（ap-mcp の rotate_mcp_key.sh も同じ扱い）。
+    読まれることはなく、整理が要るなら `gcloud secrets versions destroy` で別途行う。
     """
     try:
         from google.api_core import exceptions as api_exceptions
