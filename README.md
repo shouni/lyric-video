@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/shouni/lyric-video/actions/workflows/ci.yml/badge.svg)](https://github.com/shouni/lyric-video/actions/workflows/ci.yml)
 [![Language](https://img.shields.io/badge/Language-Python-blue)](https://www.python.org/)
-[![Python Version](https://img.shields.io/badge/Python-3.11%2B-blue)](https://www.python.org/)
+[![Python Version](https://img.shields.io/badge/Python-3.14%2B-blue)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Status](https://img.shields.io/badge/Status-Active-brightgreen)](#)
 

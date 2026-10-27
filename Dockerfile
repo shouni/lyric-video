@@ -9,7 +9,7 @@
 # たびに数 GB のイメージを引くのは無駄が大きい。
 # システム依存と共通の Python 依存は base ステージで共有し、二重管理を避ける。
 
-FROM python:3.11-slim AS base
+FROM python:3.14-slim AS base
 
 # System dependencies: ffmpeg + CJK fonts
 RUN apt-get update && apt-get install -y --no-install-recommends \

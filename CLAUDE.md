@@ -64,7 +64,7 @@ SESSION_SECRET=dummy python3 -m pytest -q
 叩くコードにはテストが無いため、その周辺を変更したときは実環境での確認が必要。
 開発用依存は `requirements-dev.txt`（`-r requirements.txt` + pytest + ruff）。
 
-CI は Python 3.11（Dockerfile と同じ）で実行される。ローカルの `.venv` が古い Python バージョンの場合、`datetime.UTC` 等 3.11 以降の構文で import エラーになることがあるが、CI/本番の 3.11 環境では問題ない。
+CI は Python 3.14（Dockerfile と同じ）で実行される。ローカルの `.venv` も 3.14 で作ること。古い Python の venv だと、CI/本番では通るコードが import エラーになることがある。
 
 ## 規約・注意点
 
