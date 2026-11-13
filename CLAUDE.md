@@ -65,7 +65,7 @@ CI runs on Python 3.14, the same as the Dockerfile. Create the local `.venv` wit
 - Comments and docstrings are English (moved from Japanese on 2026-11-14). Add one to a function or method only when a design decision needs its reason recorded, not to say what the code does. User-facing text, log messages and error messages stay Japanese: they are program output, and some tests assert on them.
 - `README.md` and this file are English.
 - Secrets (`SESSION_SECRET`, `GOOGLE_CLIENT_SECRET`, `YOUTUBE_REFRESH_TOKEN` and so on) come through environment variables. Use Secret Manager in production, and never hard-code them.
-- The script that obtained the YouTube refresh token (`scripts/get_youtube_token.py`) was removed on 2026-11-14. The same flow lives in `cmd/youtube-token` of [ap-mcp-youtube](https://github.com/shouni/ap-mcp-youtube); see the README.
+- The script that obtained the YouTube refresh token (`scripts/get_youtube_token.py`) was removed on 2026-11-14. The flow moved to a tool in a private repository; the README records what it did.
 - The `/tasks/*` endpoints in `app/handlers/worker.py` are for Cloud Tasks only and are protected by OIDC verification. Do not confuse them with the user-facing endpoints.
 - OIDC verification is gathered in `app/adapters/oidc.py`: `verify_task_caller` for Cloud Tasks and `verify_service_account` for M2M share the same token verification.
 - Read and write a job's `meta.json` (on GCS) through `app/adapters/job_store.py`. Do not scatter URI building across handlers. `update()` does not raise on failure, so that a failed metadata update does not take the job down with it.
