@@ -351,21 +351,19 @@ and both conditions are met). Next comes the IAM invoker check, and last the all
 ### Getting a YouTube refresh token
 
 The script that obtained the token (`scripts/get_youtube_token.py`) was deleted on 2026-11-14.
-The same process now lives in `cmd/youtube-token` of [ap-mcp-youtube](https://github.com/shouni/ap-mcp-youtube).
+The same flow moved to a tool in a private repository, so there is no command to run from here.
 
-```sh
-# Run in the ap-mcp-youtube directory
-MCP_YOUTUBE_CLIENT_ID="$GOOGLE_CLIENT_ID" MCP_YOUTUBE_CLIENT_SECRET="$GOOGLE_CLIENT_SECRET" \
-  go run ./cmd/youtube-token -scopes youtube.upload,youtube.readonly,youtube.force-ssl \
-  | gcloud secrets versions add YOUTUBE_REFRESH_TOKEN --data-file=-
-```
+What the flow did, for reference:
 
-Before you run it, add `http://localhost:8080/` to the redirect URIs of the OAuth client
-(type: Web application), and remove it once you have the token. **The token is not shown on screen.**
-If any of the requested scopes is not granted, the command stops without writing anything.
+- It ran the OAuth consent flow in a browser for the scopes `youtube.upload`, `youtube.readonly` and
+  `youtube.force-ssl`, with `http://localhost:8080/` as the redirect URI. That URI was added to the OAuth client
+  (type: Web application) before the run and removed afterwards.
+- It added the refresh token to Secret Manager as a new version of `YOUTUBE_REFRESH_TOKEN`.
+  **The token was never shown on screen.**
+- If any of the requested scopes was not granted, it stopped without writing anything.
 
 The Cloud Run deployment of this service was shut down on 2026-08-13, and ap-music is now the only user of
-`YOUTUBE_REFRESH_TOKEN`. The steps for getting a new token for ap-music are in the ap-music README.
+`YOUTUBE_REFRESH_TOKEN`.
 
 ---
 
