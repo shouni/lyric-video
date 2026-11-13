@@ -13,12 +13,12 @@ _ERROR_TITLE = "❌ Lyric Video 処理中にエラーが発生しました"
 
 class SlackNotifier:
     def __init__(self, webhook_url: str, service_url: str = "") -> None:
-        """Slack通知に使うWebhook URLとサービスURLを保持する。"""
+        """Hold the Webhook URL and the service URL used for Slack notifications."""
         self.webhook_url = webhook_url.strip()
         self.service_url = service_url.rstrip("/")
 
     def notify_complete(self, job_id: str, output_uri: str, youtube_url: str = "") -> None:
-        """ジョブ完了時のSlack通知を送信する。"""
+        """Send the Slack notification for a completed job."""
         lines = [f"*Job ID:* `{job_id}`"]
         if output_uri:
             lines.append(f"*Output:* `{output_uri}`")
@@ -31,7 +31,7 @@ class SlackNotifier:
             logger.error("Failed to send Slack notification job_id=%s: %s", job_id, exc)
 
     def notify_error(self, job_id: str, error: Exception | str) -> None:
-        """ジョブ失敗時のSlack通知を送信する。"""
+        """Send the Slack notification for a failed job."""
         error_msg = str(error)
         if len(error_msg) > 500:
             error_msg = error_msg[:500] + " ... (truncated)"
@@ -46,7 +46,7 @@ class SlackNotifier:
             logger.error("Failed to send Slack error notification job_id=%s: %s", job_id, exc)
 
     def _send(self, title: str, text: str) -> None:
-        """Slack Incoming Webhookへ通知本文を送信する。"""
+        """Send the notification body to the Slack Incoming Webhook."""
         if not self.webhook_url:
             logger.info("Slack notification skipped (no webhook URL configured)")
             return

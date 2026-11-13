@@ -17,23 +17,25 @@ from app.pipeline.deadline import Deadline
 
 logger = logging.getLogger(__name__)
 
-# ★ 以下は**1 ステップあたり**の上限。これを足し合わせてもジョブ全体の上限にはならない
-#   （trim + align + burn だけで 300 + 900 + 300 = 1500s、ダウンロードを足すと
-#   dispatch_deadline の 1800s に迫る）。ジョブ全体の上限は Deadline が別に持ち、
-#   下の _run が両者の短いほうを採る。理由は app/pipeline/deadline.py。
+# ★ The values below are limits **per step**. Adding them up does not give a limit for the whole
+#   job (trim + align + burn alone are 300 + 900 + 300 = 1500s, and with the downloads added it
+#   approaches the 1800s of dispatch_deadline). The limit for the whole job is held separately by
+#   Deadline, and _run below takes the shorter of the two. The reason is in
+#   app/pipeline/deadline.py.
 _SUBPROCESS_TIMEOUT_SEC = 300.0
-# Whisperのモデルロード込みで動く可能性があるため、通常のffmpeg/ffprobe呼び出しより
-# 長いタイムアウトを与える。
+# This can run with Whisper's model load included, so it gets a longer timeout than ordinary
+# ffmpeg/ffprobe calls.
 _ALIGN_TIMEOUT_SEC = 900.0
 DEFAULT_WHISPER_MODEL = "small"
-# 曲1本(セクションではなく全体)としてあり得る上限。異常なメタデータ(負値・極端な
-# 大きさ)をここで弾き、ffmpegに不正な-ss/-tをそのまま渡さないようにする。
+# The plausible upper limit for one song (the whole song, not a section). Abnormal metadata
+# (negative values, extreme sizes) is rejected here so that an invalid -ss/-t is not passed to
+# ffmpeg as is.
 _MAX_PLAUSIBLE_SEC = 3600.0
 _ALIGN_SCRIPT = Path(__file__).resolve().parent / "align_subtitles.py"
 
 
 def _safe_sec(value, field: str) -> float:
-    """メタデータの秒数値を検証しつつfloatへ変換する。"""
+    """Validate a seconds value from the metadata while converting it to float."""
     try:
         sec = float(value)
     except (TypeError, ValueError) as exc:
@@ -53,12 +55,13 @@ def build(
     whisper_model: str = DEFAULT_WHISPER_MODEL,
     deadline: Deadline | None = None,
 ) -> Path:
-    """ap-mvの完成動画とap-musicの楽曲を合成し、字幕焼き込み済みMP4を作る。
+    """Combine ap-mv's finished video with ap-music's song and make an MP4 with subtitles burned in.
 
-    ap-mvのVeo video-to-video継続生成は video_extension の累積尺上限(30秒)を避けるため
-    継続チェーンを内部でリセットすることがあるが、複数チェーンの検出・結合（ハードカット）は
-    ap-mv側（internal/worker/filter/chain_finalize.go）で完結しており、この関数は
-    `final_video_url`（1本化済みの完成動画）をそのままダウンロードするだけでよい。
+    ap-mv's Veo video-to-video continuation sometimes resets the continuation chain internally to
+    avoid the cumulative length limit of video_extension (30 seconds), but detecting and joining
+    multiple chains (hard cuts) is completed on the ap-mv side
+    (internal/worker/filter/chain_finalize.go), so this function only has to download
+    `final_video_url` (the finished video, already joined into one) as is.
     """
     meta = gcs.load_json(f"gs://{ap_mv_bucket}/veo/jobs/{ap_mv_job_id}/video_music_meta.json")
     cuts = meta.get("cuts") or []
@@ -66,14 +69,16 @@ def build(
         raise ValueError(f"ap-mv job {ap_mv_job_id!r} has no cuts")
 
     cuts_sorted = sorted(cuts, key=lambda c: c.get("cut_index", 0))
-    # ap-mv側のstart_secはjson:"start_sec,omitempty"のため、先頭カットのように値が
-    # 正当に0の場合キー自体が省略される。省略されたキーの値は常に0であると保証されて
-    # いる(omitemptyがfloat64を省略するのは値が0.0の場合のみ)ため、欠落時は0.0として扱う。
+    # start_sec on the ap-mv side is json:"start_sec,omitempty", so when the value is legitimately
+    # 0, as for the first cut, the key itself is omitted. The value of an omitted key is guaranteed
+    # to always be 0 (omitempty omits a float64 only when the value is 0.0), so a missing key is
+    # treated as 0.0.
     section_start_sec = _safe_sec(cuts_sorted[0].get("start_sec", 0.0), "cuts[0].start_sec")
 
-    # final_video_urlが無いのは、ap-mv側のチェーン結合対応（final_video_url追加）より前に
-    # 生成された既存ジョブのみ。後方互換として、その場合は従来通り最後のcutの動画を使う
-    # （旧仕様では複数チェーンがあると欠落するが、これは新規ジョブでは発生しない）。
+    # final_video_url is missing only for existing jobs generated before the ap-mv side supported
+    # chain joining (the addition of final_video_url). For backward compatibility, the last cut's
+    # video is used in that case as before (under the old behaviour, content is missing when there
+    # are multiple chains, but this does not happen for new jobs).
     video_uri = meta.get("final_video_url") or cuts_sorted[-1].get("video_url")
     if not video_uri:
         raise ValueError(f"ap-mv job {ap_mv_job_id!r} has no final_video_url or video_url")
@@ -150,11 +155,11 @@ def build(
 
 
 def _escape_ffmpeg_filter_path(path: str) -> str:
-    """ffmpegのfiltergraphパーサが特殊扱いする文字(\\ : ')をエスケープする。
+    """Escape the characters that ffmpeg's filtergraph parser treats specially (\\ : ').
 
-    このパスは常にtempfile生成のディレクトリ+固定ファイル名で、ユーザー入力
-    (ap_mv_job_id/music_job_id)が混ざることはないが、Windows等コロンを含み得る
-    パス上で -vf ass=... が壊れないよう防御的にエスケープしておく。
+    This path is always a tempfile-generated directory plus a fixed file name, and user input
+    (ap_mv_job_id/music_job_id) never gets mixed in, but it is escaped defensively so that
+    -vf ass=... does not break on paths that can contain a colon, such as on Windows.
     """
     return path.replace("\\", "\\\\").replace(":", "\\:").replace("'", "\\'")
 
@@ -165,41 +170,45 @@ def _write_reference_subtitles(
     video_height: int,
     out_path: Path,
 ) -> int:
-    """カット単位のdialogueを歌詞順に並べた、タイミング未確定のリファレンスASSを作る。
+    """Make a reference ASS, with timing not yet decided, that lists each cut's dialogue in lyric order.
 
-    ap-mvのcuts[].start_sec/end_secは、Veoにどの絵をどのカットへ割り当てるかという
-    "演出上の割付け"であって実際の歌唱タイミングではない(例: 最初のカットを歌詞なしの
-    導入ショットにする、等)。そのため録音済み音声をWhisperで強制アライメントして初めて
-    正しい表示タイミングが得られる。ここではテキストと表示順序、スタイルだけを確定させ、
-    実際の開始・終了時刻は_align_with_whisperが上書きする(align_subtitles.py側の仕様で、
-    ここで設定するDialogueのStart/Endはそもそも使われない)。
+    ap-mv's cuts[].start_sec/end_sec are a "directorial allocation" of which picture Veo assigns
+    to which cut, not the actual singing timing (for example, making the first cut an intro shot
+    with no lyrics). So the correct display timing is obtained only by force-aligning the recorded
+    audio with Whisper. Here only the text, the display order and the style are fixed, and the
+    actual start and end times are overwritten by _align_with_whisper (by the behaviour of
+    align_subtitles.py, the Start/End of the Dialogue set here are not used in the first place).
 
-    PlayResX/PlayResYは実際の動画解像度に一致させる。ap-mvの動画は720x1280の縦長
-    (shorts想定)で、固定値(例:1920x1080)のままだとlibassが非一様スケーリングを
-    かけてしまい、字幕が意図した位置からずれる。フォントサイズ・マージンも高さに
-    比例させ、どの解像度でも同じ見た目比率にする。
+    PlayResX/PlayResY are made to match the actual video resolution. ap-mv's video is 720x1280
+    portrait (intended for shorts), and with fixed values (for example 1920x1080) libass would
+    apply non-uniform scaling and the subtitles would move from the intended position. The font
+    size and margins are also made proportional to the height, so that the visual proportions are
+    the same at any resolution.
 
-    alignmentはTOP_CENTERを使う。bottom-center(\\an2)はテキストブロック全体の
-    行数に応じて基準位置が変わるため、1行の歌詞と自動折り返しで2行になる歌詞とで
-    表示の高さが揃わない。top-center(\\an8)ならブロックの上端が常に固定され、
-    行数に関わらず一切の特別処理なしで位置が揃う。副次的に、shorts系プラットフォーム
-    (YouTube Shorts/TikTok/Reels)が画面下部に被せがちな独自UIとの衝突も避けられる。
+    The alignment uses TOP_CENTER. With bottom-center (\\an2) the reference position changes
+    with the number of lines in the whole text block, so the display height does not line up
+    between a one-line lyric and a lyric that becomes two lines through automatic wrapping. With
+    top-center (\\an8) the top edge of the block is always fixed, and the position lines up
+    regardless of the number of lines with no special handling at all. As a side effect, it also
+    avoids collisions with the platform-specific UI that shorts platforms
+    (YouTube Shorts/TikTok/Reels) tend to overlay on the bottom of the screen.
     """
     subs = pysubs2.SSAFile()
     subs.info["PlayResX"] = str(video_width)
     subs.info["PlayResY"] = str(video_height)
-    # libassの自動折り返し(WrapStyle 0)はスペース位置でしか改行できず、日本語の
-    # スペースなしの長い行は画面外へはみ出す。折り返しは_wrap_aligned_subtitlesで
-    # 実測フォント幅に基づき自前で行うため、libass側の自動折り返しは無効化する。
+    # libass's automatic wrapping (WrapStyle 0) can only break at spaces, and a long Japanese line
+    # with no spaces runs off the screen. Wrapping is done by our own code in
+    # _wrap_aligned_subtitles, based on measured font widths, so automatic wrapping on the libass
+    # side is disabled.
     subs.info["WrapStyle"] = "2"
     fontsize = max(32, round(video_height * 0.055))
     marginv = max(40, round(video_height * 0.10))
     style = pysubs2.SSAStyle(
         fontname="Arial",
         fontsize=fontsize,
-        # primarycolor: \kハイライト後(既に歌われた部分)の色。secondarycolor: ハイライト前
-        # (まだ歌われていない部分)の色。pysubs2のデフォルトsecondarycolorは赤なので、
-        # 明示的に白を指定しないと未ハイライト部分が赤字になってしまう。
+        # primarycolor: the color after the \k highlight (the part already sung). secondarycolor:
+        # the color before the highlight (the part not yet sung). pysubs2's default secondarycolor
+        # is red, so unless white is specified explicitly the unhighlighted part becomes red text.
         primarycolor=pysubs2.Color(255, 255, 0),
         secondarycolor=pysubs2.Color(255, 255, 255),
         outlinecolor=pysubs2.Color(0, 0, 0),
@@ -234,7 +243,7 @@ def _align_with_whisper(
     whisper_model: str = DEFAULT_WHISPER_MODEL,
     deadline: Deadline | None = None,
 ) -> None:
-    """align_subtitles.py(Whisper強制アライメント)でリファレンスASSの実際の発話時刻を求める。"""
+    """Find the actual utterance times of the reference ASS with align_subtitles.py (Whisper forced alignment)."""
     _run(
         [
             sys.executable,
@@ -255,13 +264,14 @@ _KARAOKE_TOKEN = re.compile(r"(\{\\k\d+\})([^{]*)")
 
 
 def _wrap_aligned_subtitles(subs_path: Path, video_width: int, fontsize: int) -> None:
-    """Whisperアライメント後のカラオケテキストを、実測フォント幅に基づいて折り返す。
+    """Wrap the karaoke text after Whisper alignment, based on measured font widths.
 
-    libassの自動折り返し(WrapStyle 0)はスペースでしか改行できず、日本語のスペース
-    なしの長い行は画面外へはみ出す(_write_reference_subtitlesでWrapStyle:2に設定し、
-    libass側の自動折り返しは無効化済み)。ここでは{\\kNN}トークン単位で実際のグリフ幅を
-    burn_subs.py同じフォントで測定し、必要な位置に\\Nを挿入する。スペースの有無に
-    関わらず動作するため、_write_reference_subtitlesの想定と異なる歌詞が来ても崩れない。
+    libass's automatic wrapping (WrapStyle 0) can only break at spaces, and a long Japanese line
+    with no spaces runs off the screen (_write_reference_subtitles sets WrapStyle:2, so automatic
+    wrapping on the libass side is already disabled). Here the actual glyph width is measured per
+    {\\kNN} token with the same font as burn_subs.py, and \\N is inserted where needed. It works
+    whether or not there are spaces, so it does not break even when lyrics arrive that differ from
+    what _write_reference_subtitles assumes.
     """
     font = load_font(fontsize)
     draw = ImageDraw.Draw(Image.new("RGB", (1, 1)))
@@ -274,12 +284,12 @@ def _wrap_aligned_subtitles(subs_path: Path, video_width: int, fontsize: int) ->
 
 
 def _wrap_karaoke_text(text: str, draw: ImageDraw.ImageDraw, font, max_width: float) -> str:
-    """{\\kNN}トークン列を、指定フォントでの実測幅がmax_widthを超えない範囲で行分割する。
+    """Split a sequence of {\\kNN} tokens into lines whose measured width in the given font stays within max_width.
 
-    まずスペースを含むトークンの直後を「単語」の区切りとして扱い、単語単位で
-    詰め込む(通常の折り返しと同様、単語の途中では割らない)。1単語だけで
-    max_widthを超える場合(スペースを含まない長い行)のみ、文字単位で強制的に
-    分割する。
+    First, the position right after a token that contains a space is treated as a "word" boundary,
+    and lines are filled word by word (as in ordinary wrapping, a word is not split in the middle).
+    Only when a single word alone exceeds max_width (a long line with no spaces) is it forcibly
+    split character by character.
     """
     tokens = _KARAOKE_TOKEN.findall(text)
     if not tokens:
@@ -302,7 +312,7 @@ def _wrap_karaoke_text(text: str, draw: ImageDraw.ImageDraw, font, max_width: fl
         return "".join(c for _, c in tokens_)
 
     def hard_break(word: list[tuple[str, str]]) -> list[str]:
-        """1単語だけでmax_widthを超える場合に、文字単位で強制的に折り返す。"""
+        """Forcibly wrap character by character when a single word alone exceeds max_width."""
         sub_lines: list[str] = []
         current: list[tuple[str, str]] = []
         current_plain = ""
@@ -394,12 +404,13 @@ def _run(
     timeout: float = _SUBPROCESS_TIMEOUT_SEC,
     deadline: Deadline | None = None,
 ) -> subprocess.CompletedProcess:
-    """1 ステップを実行する。ジョブ全体の締切があれば、待ち時間をその残りで頭打ちにする。
+    """Run one step. If there is a deadline for the whole job, cap the wait at its remaining time.
 
-    deadline を渡さない呼び出しは従来どおりステップ単体の上限だけで動く。
+    A call that does not pass deadline runs with only the step's own limit, as before.
     """
     if deadline is not None:
-        # 残り時間のほうが短ければそちらを採る。使い切っていれば起動せず PipelineTimeout。
+        # If the time remaining is shorter, take that. If it is used up, do not start, and raise
+        # PipelineTimeout.
         timeout = deadline.clamp(timeout, step)
     logger.info("Running %s: %s", step, shlex.join(cmd))
     try:

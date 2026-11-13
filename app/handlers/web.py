@@ -18,17 +18,17 @@ web_bp = Blueprint("web", __name__)
 
 
 def _wants_json() -> bool:
-    """呼び出し元が`Accept: application/json`でJSONレスポンスを要求しているか判定する。"""
+    """Decide whether the caller is asking for a JSON response with `Accept: application/json`."""
     return "application/json" in request.headers.get("Accept", "")
 
 
 def _is_m2m() -> bool:
-    """M2M(サーバー間通信)のOIDC認証済みリクエストかどうかを返す。"""
+    """Return whether this is an M2M (server-to-server) request authenticated by OIDC."""
     return g.get("m2m_email") is not None
 
 
 def _require_csrf(token: str) -> None:
-    """M2Mリクエスト以外は、セッションに保存されたCSRFトークンとの一致を要求する。"""
+    """Except for M2M requests, require a match with the CSRF token stored in the session."""
     if _is_m2m():
         return
     expected = session.get("csrf_token")
@@ -37,7 +37,7 @@ def _require_csrf(token: str) -> None:
 
 
 def _fail(status: int, message: str):
-    """JSON呼び出し元にはJSONエラーを返し、それ以外は従来通りHTMLエラーページへabortする。"""
+    """Return a JSON error to JSON callers, and otherwise abort to the HTML error page as before."""
     if _wants_json():
         return {"status": "error", "error": message}, status
     abort(status)
@@ -45,7 +45,7 @@ def _fail(status: int, message: str):
 
 @web_bp.route("/", methods=["GET"])
 def home():
-    """ホームダッシュボードを表示し、最新ジョブ5件を一覧する。"""
+    """Show the home dashboard and list the latest 5 jobs."""
     cfg = current_app.config_obj
     jobs = []
     if cfg.gcs_bucket:
@@ -58,7 +58,7 @@ def home():
 
 @web_bp.route("/new", methods=["GET"])
 def get_form():
-    """新規作成フォームを表示し、初回アクセス時はCSRFトークンを発行する。"""
+    """Show the new-job form and issue a CSRF token on the first access."""
     cfg = current_app.config_obj
     if "csrf_token" not in session:
         session["csrf_token"] = secrets.token_hex(16)
@@ -71,7 +71,7 @@ def get_form():
 
 @web_bp.route("/new", methods=["POST"])
 def post_form():
-    """フォーム送信を受け取り、入力値を検証してCloud Tasksへジョブを登録する。"""
+    """Receive the form submission, validate the input and register the job with Cloud Tasks."""
     _require_csrf(request.form.get("csrf_token", ""))
 
     cfg = current_app.config_obj
@@ -112,9 +112,9 @@ def post_form():
         logger.error("Cloud Tasks queue is not configured job_id=%s", job_id)
         return render_error("システムエラー: Cloud Tasks キューが構成されていないため、タスクを実行できません。", 501)
 
-    # meta.json はキュー投入より先に、同期で保存する。Cloud Run はレスポンス返却後に
-    # CPU が絞られる（インスタンスが停止し得る）ため、バックグラウンドスレッドでの保存は
-    # 取りこぼしが起き、ジョブ一覧に queued のジョブが出てこないことがある。
+    # meta.json is saved synchronously, before enqueueing. Cloud Run throttles the CPU after the
+    # response is returned (the instance can stop), so saving on a background thread drops writes,
+    # and a queued job sometimes does not show up in the job list.
     _save_job_meta(JobRecord.from_task(task))
 
     try:
@@ -134,7 +134,7 @@ def post_form():
 
 @web_bp.route("/jobs")
 def job_list():
-    """ジョブ履歴一覧を表示する。"""
+    """Show the job history list."""
     cfg = current_app.config_obj
     jobs = []
     error = None
@@ -157,7 +157,7 @@ def job_list():
 
 @web_bp.route("/jobs/<job_id>/youtube", methods=["POST"])
 def publish_youtube(job_id: str):
-    """完了済みジョブの動画をYouTubeへアップロードするタスクをキューに追加する。"""
+    """Enqueue a task that uploads the video of a completed job to YouTube."""
     _require_csrf(request.form.get("csrf_token", ""))
 
     cfg = current_app.config_obj
@@ -195,12 +195,12 @@ def publish_youtube(job_id: str):
 
     job_store.update(meta_uri, {"youtube_status": "queued", "youtube_thumbnail_uri": yt_task.thumbnail_uri})
 
-    # 宛先は task_audience_url から組み立てる。service_url は Web 面自身のURLで、
-    # SERVER_ROLE=web のプロセスは worker_bp を登録しないため /tasks/* は 404 になる。
-    # CloudTasksQueue.enqueue は worker_url を差し替えても audience は
-    # task_audience_url のままなので、ここを揃えないと宛先とaudienceも食い違う。
-    # 単一プロセス(SERVER_ROLE未設定)では task_audience_url が service_url に
-    # フォールバックし、その場合は worker_bp も同じプロセスに載っている。
+    # The destination is built from task_audience_url. service_url is the web side's own URL, and
+    # a SERVER_ROLE=web process does not register worker_bp, so /tasks/* is 404 there.
+    # CloudTasksQueue.enqueue keeps the audience at task_audience_url even when worker_url is
+    # replaced, so unless this matches, the destination and the audience disagree as well.
+    # In a single process (SERVER_ROLE not set), task_audience_url falls back to service_url,
+    # and in that case worker_bp is in the same process too.
     youtube_worker_url = cfg.task_audience_url.rstrip("/") + "/tasks/youtube"
     try:
         queue.enqueue(asdict(yt_task), worker_url=youtube_worker_url)
@@ -216,7 +216,7 @@ def publish_youtube(job_id: str):
 
 @web_bp.route("/jobs/<job_id>/youtube", methods=["DELETE"])
 def delete_youtube(job_id: str):
-    """YouTube動画を削除し、meta.jsonのYouTube関連情報をクリアする。"""
+    """Delete the YouTube video and clear the YouTube-related information in meta.json."""
     _require_csrf(request.headers.get("X-CSRF-Token", ""))
 
     cfg = current_app.config_obj
@@ -254,7 +254,7 @@ def delete_youtube(job_id: str):
 
 @web_bp.route("/jobs/<job_id>", methods=["DELETE"])
 def delete_job(job_id: str):
-    """ジョブのmeta.jsonと出力ファイルをGCSから削除する。"""
+    """Delete the job's meta.json and output file from GCS."""
     _require_csrf(request.headers.get("X-CSRF-Token", ""))
 
     cfg = current_app.config_obj
@@ -280,7 +280,7 @@ def delete_job(job_id: str):
 
 @web_bp.route("/jobs/<job_id>")
 def job_detail(job_id: str):
-    """ジョブ詳細・動画プレーヤーを表示する。"""
+    """Show the job detail and the video player."""
     if not _is_m2m() and "csrf_token" not in session:
         session["csrf_token"] = secrets.token_hex(16)
 
@@ -319,7 +319,7 @@ def job_detail(job_id: str):
         job=job,
         signed_url=signed_url,
         download_url=download_url,
-        # M2MのHTMLアクセスではセッションを張らないためCSRFトークンは存在しない
+        # HTML access over M2M does not establish a session, so there is no CSRF token
         csrf_token=session.get("csrf_token"),
         youtube_enabled=current_app.youtube_uploader is not None,
         max_youtube_title_len=MAX_YOUTUBE_TITLE_BASE_LENGTH,
@@ -327,7 +327,7 @@ def job_detail(job_id: str):
 
 
 def _save_job_meta(record: JobRecord) -> None:
-    """ジョブ受付時のmeta.jsonを保存する。保存に失敗してもジョブ投入自体は続行する。"""
+    """Save the meta.json written when a job is accepted. If saving fails, enqueueing still continues."""
     uri = job_store.meta_uri(record.output_prefix, record.job_id)
     if not uri:
         return

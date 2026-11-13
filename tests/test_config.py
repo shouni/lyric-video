@@ -1,4 +1,4 @@
-"""Config.from_env の既定値と導出ロジックのテスト。"""
+"""Tests for the defaults and the derivation logic of Config.from_env."""
 
 import pytest
 
@@ -38,9 +38,9 @@ def env(monkeypatch):
     for key in _ENV_KEYS:
         monkeypatch.delenv(key, raising=False)
     monkeypatch.setenv("SESSION_SECRET", "secret")
-    # SERVER_ROLE は明示が必須。役割に関心のないテストは both で読む。
+    # SERVER_ROLE must be set explicitly. Tests that do not care about the role load it as both.
     monkeypatch.setenv("SERVER_ROLE", "both")
-    # both は worker 面を含むため、許可リストが無いと起動しない（fail-closed）。
+    # both includes the worker face, so it does not start without the allowlist (fail-closed).
     monkeypatch.setenv("ALLOWED_TASK_SERVICE_ACCOUNTS", "tasks@project.iam.gserviceaccount.com")
     return monkeypatch
 
@@ -110,9 +110,9 @@ class TestServerRole:
         assert cfg.serves_worker()
 
     def test_rejects_unset_role(self, env):
-        """未設定を both に落とさない。
+        """Do not fall back to both when it is unset.
 
-        落とすと、本番の環境変数が 1 つ欠けただけで公開 web に /tasks/* が復活する。
+        With a fallback, a single missing environment variable in production brings /tasks/* back on the public web.
         """
         env.delenv("SERVER_ROLE")
         with pytest.raises(RuntimeError, match="SERVER_ROLE"):
@@ -133,19 +133,19 @@ class TestServerRole:
         assert cfg.serves_worker() is serves_worker
 
     def test_rejects_unknown_role(self, env):
-        """未知の値を黙って両方構築へフォールバックさせない。
+        """Do not let an unknown value silently fall back to building both.
 
-        フォールバックすると、タイプミスで意図せず /tasks/* が公開される。
+        With a fallback, a typo exposes /tasks/* unintentionally.
         """
         env.setenv("SERVER_ROLE", "batch")
         with pytest.raises(RuntimeError, match="SERVER_ROLE"):
             Config.from_env()
 
     def test_worker_does_not_require_session_secret(self, env):
-        """Worker 面だけのプロセスは OAuth/セッションを使わないため必須にしない。
+        """A process with only the worker face does not use OAuth or sessions, so it is not required.
 
-        必須のままだと、使いもしない認証情報へのアクセス権を Worker の
-        サービスアカウントに与える必要が生じる。
+        If it stayed required, the worker's service account would have to be granted
+        access to credentials it never uses.
         """
         env.delenv("SESSION_SECRET")
         env.setenv("SERVER_ROLE", "worker")

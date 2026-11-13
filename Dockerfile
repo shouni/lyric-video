@@ -1,13 +1,14 @@
-# web と worker で別のイメージを作る。
+# Build separate images for web and worker.
 #
-#   --target web    … Whisper 系の依存もモデル重みも含まない軽量イメージ
-#   --target worker … stable-ts / torch とモデル重みを含むイメージ
+#   --target web    … a lightweight image with neither the Whisper dependencies nor the model weights
+#   --target worker … an image that includes stable-ts / torch and the model weights
 #
-# web は字幕の強制アライメントを行わない。その処理は align_subtitles.py が
-# 別プロセスで実行し、stable_whisper を import するのはそのスクリプトだけなので、
-# web 側は torch もモデル重みも必要としない。公開サービスがコールドスタートの
-# たびに数 GB のイメージを引くのは無駄が大きい。
-# システム依存と共通の Python 依存は base ステージで共有し、二重管理を避ける。
+# web does not do forced alignment of subtitles. align_subtitles.py runs that in a
+# separate process, and that script is the only thing that imports stable_whisper,
+# so the web side needs neither torch nor the model weights. Having the public
+# service pull an image of several GB on every cold start is very wasteful.
+# The system dependencies and the common Python dependencies are shared in the
+# base stage, to avoid maintaining them twice.
 
 FROM python:3.14-slim AS base
 
@@ -35,11 +36,11 @@ EXPOSE 8080
 
 
 # --- web ---------------------------------------------------------------------
-# モデル重みを持たない。gunicorn の timeout は Cloud Run 側の 300 秒に合わせる。
+# It has no model weights. The gunicorn timeout matches the 300 seconds on the Cloud Run side.
 
 FROM base AS web
 
-# chown -R を使わない理由は worker ステージ側の ★ を参照。
+# For why chown -R is not used, see the ★ in the worker stage.
 COPY --chown=appuser:appuser . .
 USER appuser
 
@@ -50,23 +51,24 @@ CMD ["gunicorn", "--bind", "0.0.0.0:8080", "--workers", "1", "--threads", "8", "
 # Pre-download Whisper model into /app/.cache (XDG_CACHE_HOME) so it survives user switch.
 # Avoid load_model here because large-v3 can exhaust Cloud Build memory while loading weights.
 #
-# モデル取得を COPY . . より前に置くのは、コードだけの変更でこの重いレイヤーを
-# 無効化しないため。
+# The model download is placed before COPY . . so that a code-only change does
+# not invalidate this heavy layer.
 
 FROM base AS worker
 
-# Whisper 系の重い依存はここでだけ入れる。web のイメージには含めない。
+# The heavy Whisper dependencies are installed only here. They are not included in the web image.
 COPY requirements-worker.txt .
 RUN pip install --no-cache-dir -r requirements-worker.txt
 
 ARG WHISPER_MODEL=large-v3
 ENV XDG_CACHE_HOME=/app/.cache
 
-# ★ モデルは appuser 所有のディレクトリへ appuser 自身に落とさせる。
-#   root で落として後から chown -R すると、overlayfs が所有者変更のたびに
-#   ファイルを上の層へコピーするため、2.84GB のモデルがもう一度丸ごと積まれる
-#   （イメージが 6GB → 8.9GB になり、デプロイのたびに同量が増えていた）。
-#   ここを chown -R に戻さないこと。
+# ★ Have appuser itself download the model into a directory owned by appuser.
+#   If root downloads it and chown -R is run afterwards, overlayfs copies a file
+#   up to the upper layer on every ownership change, so the whole 2.84GB model is
+#   stacked a second time (the image went from 6GB to 8.9GB, and the same amount
+#   was added on every deploy).
+#   Do not change this back to chown -R.
 RUN install -d -o appuser -g appuser /app/.cache
 USER appuser
 RUN python3 -c "import os, whisper; whisper._download(whisper._MODELS['${WHISPER_MODEL}'], os.path.join(os.environ['XDG_CACHE_HOME'], 'whisper'), False)"

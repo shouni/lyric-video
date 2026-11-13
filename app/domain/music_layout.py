@@ -1,41 +1,41 @@
-"""ap-music バケットのオブジェクト配置。
+"""Object layout of the ap-music bucket.
 
-配置を決めているのは ap-comp で、正典は同リポジトリの
-`internal/domain/storage_layout.go`。ここはその規則を写したもので、
-**このアプリが決めてよい値ではない**。ap-comp 側が変わったら追随する。
+The layout is decided by ap-music (a private repository). The canonical source is `internal/domain/storage_layout.go` in
+that repository. This file copies those rules, and **these are not values this app may decide**.
+When the ap-music side changes, this follows.
 
-    music/<job_id>/audio.mp3      音声      (AudioPath)
-    music/<job_id>/recipe.json    レシピ    (RecipePath)
-    music/<job_id>/master.wav     配信用    (MasterPath)
-    jobs/<job_id>.json            ジョブ状態 (JobStatusPath — 成果物と同居させない)
+    music/<job_id>/audio.mp3      audio             (AudioPath)
+    music/<job_id>/recipe.json    recipe            (RecipePath)
+    music/<job_id>/master.wav     for distribution  (MasterPath)
+    jobs/<job_id>.json            job status        (JobStatusPath, not kept alongside the artifacts)
 
-かつては `gs://ap-music/<job_id>.mp3` というバケット直下のフラットな配置だった。
-ap-comp が「1 ジョブの成果物をプレフィックス配下へまとめる」形へ移したあとも
-このアプリだけが旧規則のまま残り、素材を取得できなくなっていた（2026-08-06 に修正）。
-ap-mv も同じ規則で recipe.json を解決している（handler_recipe.go）。
+It used to be a flat layout directly under the bucket, `gs://ap-music/<job_id>.mp3`.
+Even after ap-music moved to "gather one job's artifacts under a prefix", this app alone stayed on
+the old rule and could no longer fetch its source material (fixed on 2026-08-06).
+ap-mv resolves recipe.json by the same rule (handler_recipe.go).
 """
 
 from __future__ import annotations
 
-# 音声ファイルの拡張子。ap-comp の AudioPath は拡張子を引数に取るが、
-# lyric-video が読むのは常に mp3（master.wav は配信用で、合成には使わない）。
+# File extension of the audio. ap-music's AudioPath takes the extension as an argument, but
+# lyric-video always reads mp3 (master.wav is for distribution and is not used for compositing).
 AUDIO_EXTENSION = ".mp3"
 
 
 def music_job_prefix(bucket: str, job_id: str) -> str:
-    """1 つの楽曲ジョブの成果物が収まる GCS プレフィックスを返す。"""
+    """Return the GCS prefix that holds the artifacts of one music job."""
     return f"gs://{bucket}/music/{job_id}/"
 
 
 def music_audio_uri(bucket: str, job_id: str) -> str:
-    """楽曲の音声ファイルの GCS URI を返す。"""
+    """Return the GCS URI of the song's audio file."""
     return f"{music_job_prefix(bucket, job_id)}audio{AUDIO_EXTENSION}"
 
 
 def music_recipe_uri(bucket: str, job_id: str) -> str:
-    """楽曲レシピ JSON の GCS URI を返す。
+    """Return the GCS URI of the song's recipe JSON.
 
-    音声と同じプレフィックスに置かれるが、ファイル名は audio.json ではなく
-    recipe.json。拡張子の差し替えでは当たらない。
+    It is placed under the same prefix as the audio, but the file name is recipe.json, not audio.json.
+    Swapping the extension does not find it.
     """
     return f"{music_job_prefix(bucket, job_id)}recipe.json"

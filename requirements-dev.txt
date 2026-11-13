@@ -1,12 +1,7 @@
-# 開発・CI用（本番イメージには含めない）
+# For development and CI (not included in the production image).
 -r requirements.txt
-# tests/test_align_subtitles.py が app.align_subtitles を読み込み、
-# そこで stable_whisper を import するため CI でも worker 側の依存が要る。
+# tests/test_align_subtitles.py loads app.align_subtitles, which imports
+# stable_whisper, so CI needs the worker-side dependencies too.
 -r requirements-worker.txt
 pytest>=8.0
 ruff>=0.6
-# scripts/get_youtube_token.py 用。ローカルで一度だけ動かすトークン取得スクリプトで、
-# アプリ本体は import しないため requirements.txt には入れない
-# （Dockerfile が入れるのは requirements.txt と requirements-worker.txt だけ）。
-google-auth-oauthlib>=1.2.0
-google-cloud-secret-manager>=2.20.0

@@ -8,16 +8,17 @@ from google.protobuf import duration_pb2
 
 logger = logging.getLogger(__name__)
 
-# ワーカーの応答を待つ時間。「待つ時間」ではなく **ワーカーの実行時間の実効上限** で、
-# これを超えると処理中でも Cloud Tasks は待受を打ち切る。
+# How long to wait for the worker's response. It is not a "time to wait" but the **effective upper limit on
+# the worker's run time**: past it, Cloud Tasks stops waiting even while the work is still running.
 #
-# 未指定だと Cloud Tasks の既定 10 分が上限になり、Cloud Run 側の --timeout を
-# いくら伸ばしても超えられない。字幕合成は ffmpeg を通すため 10 分に収まる保証がなく、
-# 超えた分は lyric-video-queue が max_attempts = 1 のため再試行もされず失われる。
-# HTTP ターゲットの上限である 30 分を取り、Cloud Run の timeout (1800s) と揃える。
+# Unspecified, the Cloud Tasks default of 10 minutes becomes the limit, and it cannot be exceeded however far
+# Cloud Run's --timeout is extended. Burning subtitles goes through ffmpeg, so there is no guarantee that it
+# fits in 10 minutes, and whatever runs over is lost without even a retry, because lyric-video-queue has
+# max_attempts = 1. This takes 30 minutes, the upper limit for HTTP targets, and matches Cloud Run's
+# timeout (1800s).
 #
-# これはタイムアウトの三段の**真ん中**。PIPELINE_TIMEOUT はこれより短くする
-# （config._pipeline_timeout_sec が起動時に検査する）。理由は pipeline/deadline.py。
+# This is the **middle** of the three timeout levels. PIPELINE_TIMEOUT must be shorter than this
+# (config._pipeline_timeout_sec checks it at startup). The reason is in pipeline/deadline.py.
 DISPATCH_DEADLINE_SEC = 1800
 
 
@@ -31,7 +32,7 @@ class CloudTasksQueue:
         service_account_email: str,
         audience: str,
     ) -> None:
-        """Cloud Tasksキューへの接続情報とワーカー呼び出し設定を初期化する。"""
+        """Initialize the connection details of the Cloud Tasks queue and the settings for calling the worker."""
         self._client = tasks_v2.CloudTasksClient()
         self._parent = self._client.queue_path(project_id, location_id, queue_id)
         self._worker_url = worker_url
@@ -39,7 +40,7 @@ class CloudTasksQueue:
         self._audience = audience
 
     def enqueue(self, payload: dict, worker_url: str | None = None) -> None:
-        """ペイロードをHTTPタスクとしてCloud Tasksへ登録する。"""
+        """Register the payload with Cloud Tasks as an HTTP task."""
         task = {
             "http_request": {
                 "http_method": tasks_v2.HttpMethod.POST,

@@ -17,24 +17,24 @@ logger = logging.getLogger(__name__)
 worker_bp = Blueprint("worker", __name__)
 
 
-# YouTube Data API の thumbnails.set はメディアサイズ上限が 2MB。
-# カバーアートは高解像度PNGで出力されるため、そのままだと超過することがある。
+# thumbnails.set in the YouTube Data API has a media size limit of 2MB.
+# Cover art is output as a high-resolution PNG, so as is it can exceed the limit.
 _YOUTUBE_THUMBNAIL_MAX_BYTES = 2 * 1024 * 1024
-# YouTubeサムネイルの推奨解像度。これを超える入力は縮小してから圧縮する。
+# Recommended resolution for a YouTube thumbnail. Input larger than this is scaled down before compressing.
 _YOUTUBE_THUMBNAIL_MAX_SIZE = (1280, 720)
 
 
 def _fetch_recipe_for_task(task: Task, ap_music_bucket: str) -> dict:
-    """タスクのmusic_job_idから、YouTube投稿フォーム補助用のレシピ情報を取得する。
+    """Fetch the recipe used to help fill the YouTube upload form, from the task's music_job_id.
 
-    レシピが存在しない・壊れている場合は空dictを返す（YouTube投稿フォームの
-    タイトル・説明欄のデフォルト値を埋めるための補助情報であり、動画生成の
-    成否には影響しないため）。
+    Returns an empty dict if the recipe does not exist or is corrupt (it is supplementary information
+    for filling the default title and description of the YouTube upload form, and does not affect
+    whether video generation succeeds).
 
-    以前は音声URIの拡張子を .mp3 -> .json と差し替えて探していたが、ap-music の
-    レシピは audio.json ではなく recipe.json という別名で置かれるため当たらず、
-    常に空dictを返していた。フォームの初期値が埋まらないだけで例外にはならないので
-    表面化していなかった。
+    This used to look for it by swapping the extension of the audio URI from .mp3 to .json, but
+    ap-music's recipe is stored under a different name, recipe.json, not audio.json, so the lookup
+    never matched and this always returned an empty dict. It did not surface because the only effect
+    was that the form's initial values were not filled, with no exception.
     """
     if not task.music_job_id:
         return {}
@@ -45,11 +45,12 @@ def _fetch_recipe_for_task(task: Task, ap_music_bucket: str) -> dict:
 
 
 def _prepare_thumbnail(image_bytes: bytes) -> BytesIO:
-    """YouTubeサムネイルの上限(2MB)に収まるようJPEGへ再エンコードする。
+    """Re-encode to JPEG so that it fits within the YouTube thumbnail limit (2MB).
 
-    PNGはロスレスで容量が大きくなりがちなため、まず推奨解像度(1280x720)まで縮小し、
-    さらに画質を段階的に落としながらJPEG再エンコードして上限内に収める。上限に収まらない
-    ままアップロードするとYouTube側が400を返すため、最後は最低画質まで落とし切る。
+    PNG is lossless and tends to be large, so the image is first scaled down to the recommended
+    resolution (1280x720), and then re-encoded as JPEG while lowering the quality step by step until
+    it fits within the limit. Uploading while still over the limit makes YouTube return 400, so in
+    the end the quality is lowered all the way to the minimum.
     """
     img = Image.open(BytesIO(image_bytes)).convert("RGB")
     img.thumbnail(_YOUTUBE_THUMBNAIL_MAX_SIZE, Image.LANCZOS)
@@ -64,7 +65,7 @@ def _prepare_thumbnail(image_bytes: bytes) -> BytesIO:
 
 @worker_bp.route("/tasks/generate", methods=["POST"])
 def process_task():
-    """Cloud Tasksから受け取ったジョブを検証し、動画生成パイプラインを実行する。"""
+    """Validate a job received from Cloud Tasks and run the video generation pipeline."""
     cfg = current_app.config_obj
     notifier = current_app.notifier
     pipeline = current_app.pipeline
@@ -116,7 +117,7 @@ def process_task():
 
 @worker_bp.route("/tasks/youtube", methods=["POST"])
 def process_youtube():
-    """Cloud Tasksから受け取ったYouTubeアップロードジョブを実行する。"""
+    """Run a YouTube upload job received from Cloud Tasks."""
     cfg = current_app.config_obj
     notifier = current_app.notifier
     uploader = current_app.youtube_uploader

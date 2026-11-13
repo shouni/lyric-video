@@ -48,7 +48,7 @@ FONT_CANDIDATES = [
 
 
 def safe_extract(zip_file, target_dir):
-    """ZIP内のパスを検証し、展開先の外へ出るファイルを拒否して展開する。"""
+    """Validate the paths in the ZIP, refuse any file that would land outside the target, then extract."""
     abs_target = os.path.abspath(target_dir) + os.sep
     for member in zip_file.infolist():
         dest = os.path.abspath(os.path.join(abs_target, member.filename))
@@ -58,12 +58,12 @@ def safe_extract(zip_file, target_dir):
 
 
 def color_to_rgb(c):
-    """pysubs2のASSカラーをPILで使えるRGBタプルへ変換する。"""
+    """Convert a pysubs2 ASS color into an RGB tuple that PIL can use."""
     return (c.r, c.g, c.b)
 
 
 def parse_karaoke(raw_text):
-    """ASSのカラオケ\\kタグをセンチ秒単位のテキスト区間へ分解する。"""
+    """Split the ASS karaoke \\k tags into text segments in centiseconds."""
     segments = []
     cs = 0
     for m in re.finditer(r"\{\\k(\d+)\}([^{]*)", raw_text):
@@ -75,7 +75,7 @@ def parse_karaoke(raw_text):
 
 
 def read_images_with_durations(inputs_txt):
-    """ffmpeg concat用の入力ファイルから画像名と表示秒数の組を読み取る。"""
+    """Read the pairs of image name and display seconds from an input file for ffmpeg concat."""
     images_with_durations = []
     current_file = None
     with open(inputs_txt, encoding="utf-8") as f:
@@ -90,7 +90,7 @@ def read_images_with_durations(inputs_txt):
 
 
 def build_timeline(work_dir, images_with_durations):
-    """画像ごとの表示秒数から絶対時刻のタイムラインを作成する。"""
+    """Build a timeline in absolute time from the display seconds of each image."""
     timeline = []
     t = 0.0
     for img, dur in images_with_durations:
@@ -100,7 +100,7 @@ def build_timeline(work_dir, images_with_durations):
 
 
 def img_at(timeline, t_sec):
-    """指定秒数で表示されている画像パスを返す。"""
+    """Return the path of the image shown at the given second."""
     for start, end, img in timeline:
         if start <= t_sec < end:
             return img
@@ -108,7 +108,7 @@ def img_at(timeline, t_sec):
 
 
 def event_at(events, t_sec):
-    """指定秒数で有効な字幕イベントを返す。"""
+    """Return the subtitle event active at the given second."""
     for start, end, text in events:
         if start <= t_sec < end:
             return (start, end, text)
@@ -116,7 +116,7 @@ def event_at(events, t_sec):
 
 
 def load_font(font_size):
-    """日本語カラオケ文字を描画できるフォントを読み込む。"""
+    """Load a font that can draw Japanese karaoke text."""
     for path in FONT_CANDIDATES:
         if os.path.exists(path):
             try:
@@ -131,27 +131,28 @@ def load_font(font_size):
 
 
 def get_base_img(path, img_cache):
-    """キャッシュしたRGB元画像のコピーを返す。"""
+    """Return a copy of the cached RGB source image."""
     if path not in img_cache:
         img_cache[path] = Image.open(path).convert("RGB")
     return img_cache[path].copy()
 
 
-LINE_MAX_WIDTH_RATIO = 0.92  # 1行が占めてよい画像幅の上限比率
-LINE_SHRINK_FLOOR = 0.7  # 1行のまま縮小してよい下限比。これ未満に縮むなら2行に折り返す
-MIN_FONT_SIZE = 12  # 自動縮小の下限（これ以上小さくすると判読できない）
+LINE_MAX_WIDTH_RATIO = 0.92  # Upper limit on the share of the image width one line may take
+# Lower limit on how far a line may shrink while staying one line. If it would shrink below this, wrap to 2 lines
+LINE_SHRINK_FLOOR = 0.7
+MIN_FONT_SIZE = 12  # Lower limit for automatic shrinking (any smaller is illegible)
 
 
 def measure_line(draw, text, font):
-    """1行の描画幅を返す。"""
+    """Return the drawn width of one line."""
     return draw.textlength(text, font=font)
 
 
 def shrink_to_fit(draw, lines, font, max_w):
-    """指定した行群が max_w に収まるまでフォントを縮小する。
+    """Shrink the font until the given lines fit within max_w.
 
-    MIN_FONT_SIZE まで縮めても収まらない場合はそのサイズで諦める（読めない字幕を出すより
-    はみ出しを許容する）。返り値のフォントとサイズは常に一致する。
+    If they do not fit even at MIN_FONT_SIZE, give up at that size (overflow is accepted in
+    preference to showing unreadable subtitles). The returned font and size always match.
     """
     size = getattr(font, "size", 0) or 0
     if size <= MIN_FONT_SIZE:
@@ -164,10 +165,11 @@ def shrink_to_fit(draw, lines, font, max_w):
 
 
 def best_split_segs(draw, segs, font):
-    """カラオケ \\k セグメント列を2行に分割する分割点を返す。
+    """Return the split point that divides a sequence of karaoke \\k segments into 2 lines.
 
-    セグメント内部では割らない（既存ASSは句読点や語末スペースが直前セグメントに
-    吸収されているため、セグメント境界がそのまま単語/文字境界に対応する）。
+    A segment is never split inside (in existing ASS files, punctuation and word-final spaces are
+    absorbed into the preceding segment, so segment boundaries correspond directly to word or
+    character boundaries).
     """
     texts = [t for _, _, t in segs]
     candidates = [i + 1 for i, t in enumerate(texts[:-1]) if t.endswith(" ")]
@@ -189,10 +191,10 @@ def best_split_segs(draw, segs, font):
 
 
 def fit_karaoke_layout(draw, segs, cfg):
-    """カラオケ \\k セグメント列が画像幅に収まるフォントと行分割（1〜2行）を決める。
+    """Decide the font and the line split (1 or 2 lines) with which the karaoke \\k segments fit the image width.
 
-    先に1行のまま縮小を試み、縮小率が LINE_SHRINK_FLOOR を下回るほど長い場合は
-    2行に折り返してから収まるサイズへ縮小する。
+    Shrinking on one line is tried first, and if the text is so long that the shrink ratio falls
+    below LINE_SHRINK_FLOOR, it is wrapped to 2 lines and then shrunk to a size that fits.
     """
     max_w = cfg.img_size[0] * LINE_MAX_WIDTH_RATIO
     font = cfg.font
@@ -214,7 +216,7 @@ def fit_karaoke_layout(draw, segs, cfg):
 
 
 def render_frame(img_path, evt, elapsed_cs, img_cache, cfg):
-    """1枚の画像フレームへ現在のカラオケ字幕行を描画する。"""
+    """Draw the current karaoke subtitle line onto one image frame."""
     img = get_base_img(img_path, img_cache)
     if evt is None:
         return img
@@ -259,7 +261,7 @@ def render_frame(img_path, evt, elapsed_cs, img_cache, cfg):
 
 
 def collect_transition_times(events, total_dur):
-    """描画状態が変わり得る全ての時刻を収集する。"""
+    """Collect every time at which the drawn state can change."""
     transitions = {0.0, total_dur}
     for start, end, text in events:
         transitions.add(start)
@@ -278,7 +280,7 @@ def build_concat_lines(
     frames_dir,
     img_cache=None,
 ):
-    """重複しない字幕状態を描画し、ffmpeg concat用の行を返す。"""
+    """Draw the distinct subtitle states and return the lines for ffmpeg concat."""
     if img_cache is None:
         img_cache = {}
     concat_lines = []
@@ -325,7 +327,7 @@ def build_concat_lines(
 
 
 def run_ffmpeg(concat_txt, audio, output):
-    """描画済みフレームと音声を最終MP4へエンコードする。"""
+    """Encode the rendered frames and the audio into the final MP4."""
     print("\nRunning ffmpeg...")
     return subprocess.run(
         [
@@ -356,7 +358,7 @@ def run_ffmpeg(concat_txt, audio, output):
 
 
 def main():
-    """入力素材を読み込み、字幕付きフレームを描画して動画を書き出す。"""
+    """Load the input material, draw the frames with subtitles and write out the video."""
     parser = argparse.ArgumentParser(description="Burn ASS karaoke subtitles onto PNG images and create MP4.")
     parser.add_argument("audio", help="Input audio file (mp3)")
     parser.add_argument("keyframes", help="Input keyframes zip file")

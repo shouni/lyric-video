@@ -13,17 +13,18 @@ _BEARER_PREFIX = "Bearer "
 
 
 def verify_bearer_token(authorization_header: str, audience: str) -> dict | None:
-    """Authorizationヘッダーの OIDC Bearer トークンを検証し、クレームを返す。
+    """Verify the OIDC Bearer token in the Authorization header and return its claims.
 
-    Cloud Tasks からのワーカー呼び出し（verify_task_caller）と、MCPゲートウェイ等からの
-    M2M呼び出し（verify_service_account）で同じ検証処理を共有する。
+    The same verification is shared by worker calls from Cloud Tasks (verify_task_caller) and
+    M2M calls from the MCP gateway and others (verify_service_account).
     """
     if not authorization_header.startswith(_BEARER_PREFIX):
         return None
     token = authorization_header[len(_BEARER_PREFIX) :]
     try:
-        # verify_oauth2_token は無効なトークンに ValueError、発行者不一致や証明書取得の
-        # 通信エラーに google.auth.exceptions.GoogleAuthError を送出する（公式docstring参照）。
+        # verify_oauth2_token raises ValueError for an invalid token, and
+        # google.auth.exceptions.GoogleAuthError for an issuer mismatch or a network error while fetching
+        # the certificates (see the official docstring).
         return google_id_token.verify_oauth2_token(token, _request, audience)
     except (ValueError, google_auth_exceptions.GoogleAuthError) as exc:
         logger.info("OIDC token verification failed: %s", exc)
@@ -31,10 +32,10 @@ def verify_bearer_token(authorization_header: str, audience: str) -> dict | None
 
 
 def verify_service_account(authorization_header: str, audience: str, allowed_service_accounts: list[str]) -> str | None:
-    """M2M(サーバー間通信)呼び出しを検証し、許可済みサービスアカウントのメールを返す。
+    """Verify an M2M (server-to-server) call and return the email of the allowed service account.
 
-    許可リストが空、ヘッダーが Bearer 形式でない、検証失敗、または送信元が
-    許可リストに含まれない場合は None を返す（呼び出し元はセッション認証にフォールバックする）。
+    Returns None if the allowlist is empty, the header is not in Bearer form, verification fails, or
+    the sender is not in the allowlist (the caller falls back to session authentication).
     """
     if not allowed_service_accounts:
         return None
@@ -51,15 +52,15 @@ def verify_service_account(authorization_header: str, audience: str, allowed_ser
 
 
 def verify_task_caller(authorization_header: str, audience: str, allowed_service_accounts: list[str]) -> bool:
-    """Cloud Tasks ワーカーエンドポイントの呼び出し元を検証する。
+    """Verify the caller of a Cloud Tasks worker endpoint.
 
-    audience と許可リストのどちらも、未設定なら拒否する（fail-closed）。audience は
-    トークンの**送り先**を表すだけで、許可した呼び出し元かどうかは示さない。任意の
-    サービスアカウントが同じ audience のトークンを取得できるため、email クレームを
-    許可リストと照合するところまでやって初めて呼び出し元を認可したことになる。
+    If either the audience or the allowlist is not set, the request is refused (fail-closed). The
+    audience only says where the token is **addressed**, and does not show whether the caller is an
+    allowed one. Any service account can obtain a token with the same audience, so the caller is
+    authorized only once the email claim has been checked against the allowlist.
 
-    「設定し忘れたら全部通る」の逆にしてある。以前は expected_email が空だと照合ごと
-    スキップしていたため、設定漏れがそのまま検証の無効化になっていた。
+    This is the opposite of "forget to set it and everything gets through". Previously, an empty
+    expected_email skipped the check altogether, so a missing setting directly disabled verification.
     """
     if not audience:
         logger.error("TASK_AUDIENCE_URL not configured — denying request to be safe")
