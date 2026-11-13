@@ -1,4 +1,4 @@
-"""domain 配下（Task / JobRecord / YouTubeTask / music_layout）のテスト。"""
+"""Tests for what is under domain (Task / JobRecord / YouTubeTask / music_layout)."""
 
 import json
 
@@ -154,10 +154,10 @@ class TestYouTubeTaskTags:
 
 
 class TestMusicLayout:
-    """ap-music の配置は ap-comp の storage_layout.go が決めている。
+    """The layout of ap-music is decided by storage_layout.go in ap-music.
 
-    かつてバケット直下の <job_id>.mp3 だったものが music/<job_id>/audio.mp3 へ
-    移り、このアプリだけ追随できていなかった。再発すると素材の取得が全滅する。
+    What used to be <job_id>.mp3 directly under the bucket moved to music/<job_id>/audio.mp3,
+    and this app alone had not followed. If that happens again, every fetch of source material fails.
     """
 
     def test_job_prefix_groups_artifacts_under_the_job_id(self):
@@ -169,7 +169,7 @@ class TestMusicLayout:
         assert uri != "gs://ap-music/comp-1.mp3"
 
     def test_recipe_is_named_recipe_json_not_audio_json(self):
-        # 拡張子の差し替えでは当たらないことが、この命名を明示する理由。
+        # Swapping the extension does not hit it, which is the reason this name is stated explicitly.
         assert music_recipe_uri("ap-music", "comp-1") == "gs://ap-music/music/comp-1/recipe.json"
         assert music_recipe_uri("ap-music", "comp-1") != music_audio_uri("ap-music", "comp-1")[: -len(".mp3")] + ".json"
 

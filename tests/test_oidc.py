@@ -1,4 +1,4 @@
-"""OIDC検証（Cloud Tasksワーカー / M2M）のテスト。トークン検証自体はモックする。"""
+"""Tests for OIDC verification (Cloud Tasks worker / M2M). The token verification itself is mocked."""
 
 import pytest
 
@@ -10,7 +10,7 @@ SA = "sa@project.iam.gserviceaccount.com"
 
 @pytest.fixture
 def verified(monkeypatch):
-    """verify_oauth2_token を差し替え、返すクレームをテストから指定できるようにする。"""
+    """Replace verify_oauth2_token so that a test can specify the claims it returns."""
 
     def _install(claims=None, error=None):
         def _fake(token, request, audience):
@@ -82,10 +82,10 @@ class TestVerifyTaskCaller:
         assert oidc.verify_task_caller("Bearer tok", AUDIENCE, [SA]) is False
 
     def test_denies_when_allow_list_is_empty(self, verified):
-        """許可リストが空なら「誰も許可しない」。
+        """An empty allowlist means "allow nobody".
 
-        以前は照合ごとスキップして全員通していた。設定漏れがそのまま検証の
-        無効化になる形だったため、fail-closed へ変更した。
+        It used to skip the comparison altogether and let everyone through. A missing
+        setting therefore disabled the verification outright, so it was changed to fail-closed.
         """
         verified({"email": SA, "email_verified": True})
         assert oidc.verify_task_caller("Bearer tok", AUDIENCE, []) is False

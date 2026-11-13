@@ -1,5 +1,5 @@
-# web / worker の両方が使う依存。
-# Whisper 系の重いパッケージは requirements-worker.txt に分けている（web のイメージから外すため）。
+# Dependencies used by both web and worker.
+# The heavy Whisper packages are split out into requirements-worker.txt (to keep them out of the web image).
 
 # Processing
 pysubs2

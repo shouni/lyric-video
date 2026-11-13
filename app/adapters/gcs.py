@@ -13,14 +13,14 @@ from google.cloud import storage
 
 
 def download(uri: str, local_path: str) -> None:
-    """GCS上のオブジェクトをローカルパスへダウンロードする。"""
+    """Download an object on GCS to a local path."""
     bucket_name, blob_name = _parse(uri)
     os.makedirs(os.path.dirname(os.path.abspath(local_path)), exist_ok=True)
     _get_client().bucket(bucket_name).blob(blob_name).download_to_filename(local_path)
 
 
 def upload(local_path: str, uri: str) -> None:
-    """ローカルファイルを指定されたGCS URIへアップロードする。"""
+    """Upload a local file to the given GCS URI."""
     bucket_name, blob_name = _parse(uri)
     blob = _get_client().bucket(bucket_name).blob(blob_name)
     content_type, _ = mimetypes.guess_type(local_path)
@@ -28,21 +28,21 @@ def upload(local_path: str, uri: str) -> None:
 
 
 def save_json(data: dict, uri: str) -> None:
-    """dictをJSON形式でGCSへ保存する。"""
+    """Save a dict to GCS as JSON."""
     bucket_name, blob_name = _parse(uri)
     blob = _get_client().bucket(bucket_name).blob(blob_name)
     blob.upload_from_string(json.dumps(data, ensure_ascii=False), content_type="application/json")
 
 
 def load_json(uri: str) -> dict:
-    """GCS上のJSONファイルをdictとして読み込む。"""
+    """Load a JSON file on GCS as a dict."""
     bucket_name, blob_name = _parse(uri)
     blob = _get_client().bucket(bucket_name).blob(blob_name)
     return json.loads(blob.download_as_text())
 
 
 def list_job_metadata(output_prefix: str) -> list[dict]:
-    """output_prefix配下のmeta.jsonを並列取得し、作成日時の降順で返す。"""
+    """Fetch the meta.json files under output_prefix in parallel and return them newest first by creation time."""
     from concurrent.futures import ThreadPoolExecutor
 
     bucket_name, prefix = _parse(output_prefix.rstrip("/") + "/")
@@ -53,7 +53,7 @@ def list_job_metadata(output_prefix: str) -> list[dict]:
         try:
             data = json.loads(blob.download_as_text())
             if not data.get("job_id"):
-                # blob.name 例: lyric-video/output/<job_id>/meta.json
+                # Example blob.name: lyric-video/output/<job_id>/meta.json
                 data["job_id"] = blob.name.split("/")[-2]
             return data
         except Exception:
@@ -68,7 +68,7 @@ def list_job_metadata(output_prefix: str) -> list[dict]:
 
 @contextmanager
 def open_blob(uri: str):
-    """GCS上のオブジェクトをシーク可能なストリームとして開く。"""
+    """Open an object on GCS as a seekable stream."""
     bucket_name, blob_name = _parse(uri)
     blob = _get_client().bucket(bucket_name).blob(blob_name)
     with blob.open("rb") as f:
@@ -76,7 +76,7 @@ def open_blob(uri: str):
 
 
 def delete(uri: str) -> None:
-    """GCS上のオブジェクトを削除する。存在しない場合は何もしない。"""
+    """Delete an object on GCS. Raises NotFound if it does not exist; the caller logs it and carries on."""
     bucket_name, blob_name = _parse(uri)
     blob = _get_client().bucket(bucket_name).blob(blob_name)
     blob.delete(if_generation_match=None)
@@ -85,7 +85,7 @@ def delete(uri: str) -> None:
 def generate_signed_url(
     uri: str, service_account_email: str, expiration_hours: int = 1, filename: str | None = None
 ) -> str:
-    """GCSオブジェクトへの時限アクセスURLを生成する。"""
+    """Generate a time-limited access URL for a GCS object."""
     credentials, _ = google.auth.default(scopes=["https://www.googleapis.com/auth/cloud-platform"])
     credentials.refresh(google_requests.Request())
     bucket_name, blob_name = _parse(uri)
@@ -103,7 +103,7 @@ def generate_signed_url(
 
 
 def _parse(uri: str) -> tuple[str, str]:
-    """GCS URIをバケット名とオブジェクト名に分解する。"""
+    """Split a GCS URI into a bucket name and an object name."""
     if not uri.startswith("gs://"):
         raise ValueError(f"not a GCS URI: {uri!r}")
     path = uri[len("gs://") :]
@@ -115,5 +115,5 @@ def _parse(uri: str) -> tuple[str, str]:
 
 @lru_cache(maxsize=1)
 def _get_client() -> storage.Client:
-    """再利用可能なGoogle Cloud Storageクライアントを取得する。"""
+    """Get a reusable Google Cloud Storage client."""
     return storage.Client()

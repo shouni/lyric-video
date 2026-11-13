@@ -21,8 +21,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const value = tabEl.dataset.sourceType;
         sourceTypeInput.value = value;
 
-        // disabledな入力欄はフォーム送信対象から除外されるため、動画タブ選択時に
-        // 静止画専用欄(subs_url/whisper_model)の値が誤って送信されるのを防ぐ。
+        // Disabled inputs are excluded from form submission, so this prevents the values of
+        // the still-image-only fields (subs_url/whisper_model) from being sent by mistake
+        // when the video tab is selected.
         imagesPane.querySelectorAll('input, select').forEach((el) => {
             el.disabled = value !== 'images';
         });

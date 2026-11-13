@@ -20,7 +20,7 @@ _CHUNK_SIZE = 10 * 1024 * 1024  # 10 MB
 
 
 def extract_video_id(url: str) -> str:
-    """youtu.be/ID と youtube.com/watch?v=ID の両形式から video_id を抽出する。"""
+    """Extract the video_id from both the youtu.be/ID and youtube.com/watch?v=ID forms."""
     if not url:
         return ""
     parsed = urlparse(url)
@@ -43,20 +43,20 @@ class YouTubeUploader:
         )
 
     def set_thumbnail(self, video_id: str, image_obj: IO[bytes], mimetype: str = "image/jpeg") -> None:
-        """GCSストリームの画像をYouTube動画のサムネイルに設定する。"""
+        """Set an image from a GCS stream as the thumbnail of a YouTube video."""
         youtube = build("youtube", "v3", credentials=self._credentials, cache_discovery=False)
         media = MediaIoBaseUpload(image_obj, mimetype=mimetype, resumable=False)
         youtube.thumbnails().set(videoId=video_id, media_body=media).execute()
         logger.info("Thumbnail set video_id=%s", video_id)
 
     def delete_video(self, video_id: str) -> None:
-        """YouTube動画を削除する。"""
+        """Delete a YouTube video."""
         youtube = build("youtube", "v3", credentials=self._credentials, cache_discovery=False)
         youtube.videos().delete(id=video_id).execute()
         logger.info("YouTube video deleted video_id=%s", video_id)
 
     def video_exists(self, video_id: str) -> bool:
-        """動画IDがYouTube上に存在するか確認する。削除済みの場合はFalseを返す。"""
+        """Check whether the video ID exists on YouTube. Returns False if it has been deleted."""
         youtube = build("youtube", "v3", credentials=self._credentials, cache_discovery=False)
         response = youtube.videos().list(part="id", id=video_id).execute()
         return bool(response.get("items"))
@@ -69,7 +69,7 @@ class YouTubeUploader:
         tags: list[str] | None = None,
         privacy: str = "private",
     ) -> str:
-        """GCSストリームを直接YouTubeにアップロードし、動画IDを返す。"""
+        """Upload a GCS stream directly to YouTube and return the video ID."""
         youtube = build("youtube", "v3", credentials=self._credentials, cache_discovery=False)
         body = {
             "snippet": {

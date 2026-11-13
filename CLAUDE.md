@@ -1,56 +1,54 @@
 # CLAUDE.md
 
-このファイルは、このリポジトリで Claude Code (claude.ai/code) が作業する際のガイダンスを提供する。
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## 概要
+## Overview
 
-**Lyric Video** は、MP3 からカラオケ字幕付き MP4 動画を生成し、YouTube へ自動投稿するオーケストレーター。GCS 上の音声・キーフレーム素材を Cloud Run 上で非同期処理する。詳細な仕様・環境変数・エンドポイント一覧は README.md を参照。
+**Lyric Video** is an orchestrator that turns an MP3 into an MP4 with karaoke subtitles and uploads it to YouTube. It processes audio and keyframe assets on GCS asynchronously on Cloud Run. See README.md for the full specification, the environment variables and the endpoint list.
 
-## アーキテクチャ
+**The Cloud Run deployment was shut down on 2026-08-13.** The repository is kept as a reference. The notes below on deployment describe how it ran while it was live.
 
-Flask アプリ（`app/main.py`）+ Cloud Tasks による非同期ワーカー構成。
+## Architecture
+
+A Flask app (`app/main.py`) with asynchronous workers driven by Cloud Tasks.
 
 ```
 app/
-├── main.py              # Flaskエントリポイント（create_app, Blueprint登録, 認証ミドルウェア）
-├── config.py             # 環境変数からのConfig読込（Config.from_env）
-├── auth.py                # Google OAuth2ログイン（Authlib）
-├── align_subtitles.py    # Whisperによるカラオケタイミング生成
-├── burn_subs.py           # PILによる字幕焼き込み・動画エンコード
-├── video_merge.py        # source_type=video の合成（ap-mv完成動画＋ap-music楽曲）
-├── adapters/               # 外部サービス連携（GCS, job_store, Slack, Cloud Tasks, YouTube, OIDC検証）
-├── domain/                 # ドメインモデル（Job, Task, YoutubeTask）
+├── main.py              # Flask entry point (create_app, blueprint registration, auth middleware)
+├── config.py            # Loads Config from environment variables (Config.from_env)
+├── auth.py              # Google OAuth2 login (Authlib)
+├── align_subtitles.py   # Karaoke timing with Whisper
+├── burn_subs.py         # Subtitle burn-in with PIL, and video encoding
+├── video_merge.py       # Merge for source_type=video (finished ap-mv video + ap-music song)
+├── adapters/            # External services (GCS, job_store, Slack, Cloud Tasks, YouTube, OIDC verification)
+├── domain/              # Domain models (Job, Task, YoutubeTask)
 ├── handlers/
-│   ├── web.py              # ユーザー向けエンドポイント（/, /new, /jobs, ...)
-│   └── worker.py           # Cloud Tasksワーカー（/tasks/generate, /tasks/youtube, OIDC認証）
-└── pipeline/runner.py      # align_subtitles.py / burn_subs.py をsubprocess実行しGCSへアップロード
+│   ├── web.py           # User-facing endpoints (/, /new, /jobs, ...)
+│   └── worker.py        # Cloud Tasks workers (/tasks/generate, /tasks/youtube, OIDC auth)
+└── pipeline/runner.py   # Runs align_subtitles.py / burn_subs.py as subprocesses and uploads to GCS
 ```
 
-フローは2段階の非同期処理:
-1. `/new` でジョブ投入 → Cloud Tasks → `/tasks/generate`（動画生成）
-2. ジョブ詳細画面から手動トリガー → Cloud Tasks → `/tasks/youtube`（YouTube公開）
+The flow is two asynchronous stages:
+1. A job is submitted on `/new` → Cloud Tasks → `/tasks/generate` (video generation)
+2. A manual trigger on the job detail page → Cloud Tasks → `/tasks/youtube` (YouTube publishing)
 
-## 開発コマンド
+The sibling services it reads from are `ap-mv` (keyframes and Veo videos, public) and `ap-music` (songs, private). An earlier version of ap-music is public and archived as [ap-music-poc](https://github.com/shouni/ap-music-poc); it still uses the older flat layout (`<job_id>.mp3`), not the `music/<job_id>/` layout this code reads.
+
+## Development commands
 
 ```sh
-# ローカル起動（要環境変数、README.md参照）
+# Run locally (needs environment variables, see README.md)
 python3 -m app.main
 
-# Dockerビルド
+# Docker build
 docker build -t lyric-video .
 ```
 
-デプロイは `main` への push で Cloud Build のトリガー `build-lyric-video` が自動で走る。
-手で `gcloud builds submit` を打つ必要はない。
+While the service was live, a push to `main` started the Cloud Build trigger `build-lyric-video` and deployed automatically. There was no need to run `gcloud builds submit` by hand.
 
-**このリポジトリが所有するのはイメージだけ。** Cloud Run サービス 2 本・環境変数・実行 SA・
-シークレット参照・キュー・バケットは ap-infra（`~/GolandProjects/ap-infra` の
-`app_lyric_video.tf`）の Terraform が所有する。`cloudbuild.yaml` が `--image` しか
-渡していないのはそのため。**`gcloud run services update --set-env-vars` を打つと
-次の `terraform apply` で戻され、その間 ap-infra の毎日のドリフト検知が落ち続ける。**
-env を足したいときは、このリポジトリの `config.py` と ap-infra の tf の両方を触る。
+**This repository owned only the image.** The two Cloud Run services, their environment variables, the runtime service accounts, the secret references, the queue and the bucket were owned by Terraform in ap-infra (a private repository; its `app_lyric_video.tf` was removed when the service was retired). That is why `cloudbuild.yaml` passes nothing but `--image`. **Running `gcloud run services update --set-env-vars` would be reverted by the next `terraform apply`, and ap-infra's daily drift check would fail until then.** Adding an environment variable meant touching both `config.py` here and the Terraform in ap-infra.
 
-lint/format には ruff、テストには pytest を導入済み（`pyproject.toml`、CI: `.github/workflows/ci.yml`）。変更後は以下で確認する。
+ruff handles lint and format, and pytest runs the tests (`pyproject.toml`, CI: `.github/workflows/ci.yml`). After a change, check with:
 
 ```sh
 ruff check .
@@ -58,25 +56,23 @@ ruff format --check .
 SESSION_SECRET=dummy python3 -m pytest -q
 ```
 
-テストは外部サービスへ接続しない純粋ロジック（`domain/`・`adapters/job_store`・`adapters/oidc`・
-`config`・`align_subtitles`・`video_merge` の折り返し）と、Flaskテストクライアントによる
-認証ミドルウェアの配線確認のみを対象にしている。GCS/Cloud Tasks/YouTube/Whisper/ffmpeg を
-叩くコードにはテストが無いため、その周辺を変更したときは実環境での確認が必要。
-開発用依存は `requirements-dev.txt`（`-r requirements.txt` + pytest + ruff）。
+The tests cover only pure logic that reaches no external service (`domain/`, `adapters/job_store`, `adapters/oidc`, `config`, `align_subtitles`, and the line wrapping in `video_merge`) and the wiring of the auth middleware through the Flask test client. Code that calls GCS, Cloud Tasks, YouTube, Whisper or ffmpeg has no tests, so a change around it needs checking in a real environment. Development dependencies are in `requirements-dev.txt` (`-r requirements.txt` + pytest + ruff).
 
-CI は Python 3.14（Dockerfile と同じ）で実行される。ローカルの `.venv` も 3.14 で作ること。古い Python の venv だと、CI/本番では通るコードが import エラーになることがある。
+CI runs on Python 3.14, the same as the Dockerfile. Create the local `.venv` with 3.14 too. With a venv on an older Python, code that passes in CI and production can fail on import.
 
-## 規約・注意点
+## Conventions and cautions
 
-- 関数・メソッドには「何を」ではなく設計判断の理由が要る場合のみ日本語のdocstring/コメントを付ける（既存コードの慣習に合わせる）。
-- 秘密情報（`SESSION_SECRET`, `GOOGLE_CLIENT_SECRET`, `YOUTUBE_REFRESH_TOKEN` 等）は環境変数経由。本番はSecret Manager推奨（コード内にハードコードしない）。
-- `app/handlers/worker.py` の `/tasks/*` エンドポイントはOIDC検証で保護されたCloud Tasks専用。ユーザー向けエンドポイントと混同しない。
-- OIDC検証は `app/adapters/oidc.py` に集約している（Cloud Tasks向け `verify_task_caller` とM2M向け `verify_service_account` が同じトークン検証を共有する）。
-- ジョブの `meta.json`（GCS）への読み書きは `app/adapters/job_store.py` 経由で行う。URIの組み立てを各ハンドラに散らさない。`update()` は失敗しても例外を投げない（メタデータの更新失敗でジョブ本体を落とさないため）。
-- ユーザー向けエンドポイント（`/new`, `/jobs`, ...）は、ブラウザセッションに加えて `ALLOWED_M2M_SERVICE_ACCOUNTS` 経由のOIDC M2M認証（`app/adapters/oidc.py`）も受け付ける。M2M認証済みリクエストはCSRF検証をバイパスし、`Accept: application/json` を付けるとJSONを返す（MCPゲートウェイからの呼び出し用）。ap-comp の `/web/*` パターンと同じ設計。
-- GCS入出力パスやWhisperモデル等のデフォルト値は `app/config.py` の `Config.from_env` に集約されている。`source_type=video` の合成は曲全体を1本でアライメントするため、`WHISPER_MODEL` とは別の `VIDEO_WHISPER_MODEL`（既定 `small`）を使う。
-- `/new` 受付時の `meta.json` 保存は同期で行う。Cloud Run はレスポンス返却後にCPUが絞られるため、バックグラウンドスレッドでの保存は取りこぼす。
-- **タイムアウトは三段（`PIPELINE_TIMEOUT` < dispatch deadline <= Cloud Run の timeout）で、`PIPELINE_TIMEOUT` を必ずいちばん短く取る。** アプリが自分で先に諦めることでのみ `meta.json` に `failed` を書き Slack へ通知できる。Cloud Tasks に先に打ち切られるとプロセスごと SIGTERM で、失敗の記録も通知も残らず `running` のまま取り残される（`max_attempts = 1` なので再試行も無い）。締切は `app/pipeline/deadline.py` の `Deadline` が持ち、`PipelineRunner.run` が 1 つ作って全工程へ配る。`video_merge.py` の `_SUBPROCESS_TIMEOUT_SEC` 等は**1 ステップあたり**の上限で、足してもジョブ全体の上限にはならない（両者の短いほうが採られる）。不変条件は `app/config.py` が起動時に検査する。
-- サブプロセスを新しく足すときは `pipeline/runner.py` の `_run_subprocess` か `video_merge.py` の `_run` を通す。どちらも締切を受け取って待ち時間を頭打ちにする。`subprocess.run` / `Popen.wait()` を上限なしで直接呼ぶと、そこだけ三段の網から漏れる。
-- `align_subtitles.py` は行末に 300ms の余韻（`TAIL_MS`）を足すため次行と重なることがある。`burn_subs.py` は「先の行優先」で1行しか描かないので影響しないが、`video_merge.py` は `-vf ass=`（libass）で焼くため重なった区間は2行が積まれて表示される。これを避けるため `trim_overlaps` が次行の開始で切ってから ASS を書き出す。
-- `app/align_subtitles.py` / `app/burn_subs.py` は姉妹リポジトリ `~/PycharmProjects/lyric-video-maker` のほぼコピー（差分はDocker用Linuxフォントパスと、maker側のみが持つ `--style-file`／lineモード）。片方を修正したらもう片方への移植を検討する。
+- Comments and docstrings are English (moved from Japanese on 2026-11-14). Add one to a function or method only when a design decision needs its reason recorded, not to say what the code does. User-facing text, log messages and error messages stay Japanese: they are program output, and some tests assert on them.
+- `README.md` and this file are English.
+- Secrets (`SESSION_SECRET`, `GOOGLE_CLIENT_SECRET`, `YOUTUBE_REFRESH_TOKEN` and so on) come through environment variables. Use Secret Manager in production, and never hard-code them.
+- The script that obtained the YouTube refresh token (`scripts/get_youtube_token.py`) was removed on 2026-11-14. The same flow lives in `cmd/youtube-token` of [ap-mcp-youtube](https://github.com/shouni/ap-mcp-youtube); see the README.
+- The `/tasks/*` endpoints in `app/handlers/worker.py` are for Cloud Tasks only and are protected by OIDC verification. Do not confuse them with the user-facing endpoints.
+- OIDC verification is gathered in `app/adapters/oidc.py`: `verify_task_caller` for Cloud Tasks and `verify_service_account` for M2M share the same token verification.
+- Read and write a job's `meta.json` (on GCS) through `app/adapters/job_store.py`. Do not scatter URI building across handlers. `update()` does not raise on failure, so that a failed metadata update does not take the job down with it.
+- The user-facing endpoints (`/new`, `/jobs`, ...) accept OIDC M2M authentication through `ALLOWED_M2M_SERVICE_ACCOUNTS` (`app/adapters/oidc.py`) as well as the browser session. A request authenticated by M2M bypasses CSRF verification, and returns JSON when it sends `Accept: application/json` (for calls from the MCP gateway). This is the same design as the `/web/*` pattern in ap-music.
+- Defaults such as the GCS input and output paths and the Whisper model are gathered in `Config.from_env` in `app/config.py`. The merge for `source_type=video` aligns the whole song in one pass, so it uses `VIDEO_WHISPER_MODEL` (default `small`), separate from `WHISPER_MODEL`.
+- `meta.json` is saved synchronously when `/new` accepts a job. Cloud Run throttles the CPU after the response is returned, so a save on a background thread can be lost.
+- **The timeouts form three tiers (`PIPELINE_TIMEOUT` < dispatch deadline <= Cloud Run timeout), and `PIPELINE_TIMEOUT` must always be the shortest.** Only by giving up first can the app write `failed` to `meta.json` and notify Slack. If Cloud Tasks cuts the request first, the whole process gets SIGTERM, nothing is recorded or notified, and the job is left at `running` (there is no retry either, because `max_attempts = 1`). The deadline is held by `Deadline` in `app/pipeline/deadline.py`; `PipelineRunner.run` creates one and hands it to every step. Values such as `_SUBPROCESS_TIMEOUT_SEC` in `video_merge.py` are limits **per step** and do not add up to a limit for the whole job (the shorter of the two applies). `app/config.py` checks the invariant at startup.
+- When adding a subprocess, go through `_run_subprocess` in `pipeline/runner.py` or `_run` in `video_merge.py`. Both take the deadline and cap the wait. Calling `subprocess.run` or `Popen.wait()` directly with no limit leaves that call outside the three tiers.
+- `align_subtitles.py` adds a 300 ms tail (`TAIL_MS`) to the end of each line, so a line can overlap the next. `burn_subs.py` draws only one line, the earlier one winning, so it is unaffected. `video_merge.py` burns with `-vf ass=` (libass), where the overlap would show two lines stacked. To avoid that, `trim_overlaps` cuts each line at the start of the next before the ASS file is written.
+- `app/align_subtitles.py` and `app/burn_subs.py` are near copies of the sibling repository [lyric-video-maker](https://github.com/shouni/lyric-video-maker). The differences are the Linux font paths for Docker, and `--style-file` and line mode, which only the maker has. When one side is fixed, consider porting the fix to the other.

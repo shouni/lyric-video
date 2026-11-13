@@ -1,4 +1,4 @@
-"""adapters 配下（GCS URI 解析 / job_store / Cloud Tasks 投入 / YouTube URL 解析）のテスト。"""
+"""Tests for what is under adapters (GCS URI parsing / job_store / Cloud Tasks enqueue / YouTube URL parsing)."""
 
 import pytest
 
@@ -62,7 +62,7 @@ class TestJobStoreUpdate:
 
 
 class TestCloudTasksQueue:
-    """投入されるタスクの中身を検証する。"""
+    """Verify the contents of the enqueued task."""
 
     @staticmethod
     def _queue(monkeypatch, captured):
@@ -85,15 +85,15 @@ class TestCloudTasksQueue:
         )
 
     def test_sets_dispatch_deadline(self, monkeypatch):
-        """未指定だと Cloud Tasks の既定 10 分が実行時間の上限になり、
-        超えた分は max_attempts = 1 のため再試行されずに失われる。"""
+        """When it is not specified, the Cloud Tasks default of 10 minutes becomes the limit on the run time,
+        and anything that exceeds it is lost without a retry because max_attempts = 1."""
         captured = {}
         self._queue(monkeypatch, captured).enqueue({"job_id": "j"})
 
         assert captured["task"]["dispatch_deadline"].seconds == 1800
 
     def test_dispatch_deadline_stays_within_http_target_limit(self, monkeypatch):
-        """HTTP ターゲットの上限は 30 分。超えると Cloud Tasks が InvalidArgument を返す。"""
+        """The limit for an HTTP target is 30 minutes. Beyond it Cloud Tasks returns InvalidArgument."""
         captured = {}
         self._queue(monkeypatch, captured).enqueue({"job_id": "j"})
 

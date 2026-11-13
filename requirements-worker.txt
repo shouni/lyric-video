@@ -1,9 +1,9 @@
-# worker だけが使う依存。
+# Dependencies used only by the worker.
 #
-# Whisper による強制アライメントは align_subtitles.py が別プロセスで実行する。
-# web 側（app.main → runner → video_merge）はこれらを import しないため、
-# web のイメージに入れる必要がない。torch だけで 1〜2GB あり、
-# 公開サービスのコールドスタートを重くしていた。
+# Forced alignment with Whisper is run by align_subtitles.py in a separate process.
+# The web side (app.main → runner → video_merge) does not import these, so they
+# do not need to be in the web image. torch alone is 1 to 2GB, and it was making
+# the public service's cold start heavy.
 
 stable-ts
 silero-vad

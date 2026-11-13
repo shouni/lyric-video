@@ -1,4 +1,4 @@
-"""video_merge の入力検証とカラオケ行の折り返しロジックのテスト。"""
+"""Tests for the input validation of video_merge and the wrapping logic for karaoke lines."""
 
 import pytest
 from PIL import Image, ImageDraw
@@ -61,7 +61,7 @@ class TestWrapKaraokeText:
     def test_wraps_long_japanese_line_without_spaces(self, draw, font):
         wrapped = video_merge._wrap_karaoke_text(self.karaoke("あ" * 30), draw, font, 200)
         assert r"\N" in wrapped
-        # \k タグを落とさずに折り返している
+        # It wraps without dropping the \k tags.
         assert wrapped.count(r"\k10") == 30
 
     def test_never_exceeds_max_width_per_line(self, draw, font):
@@ -76,7 +76,7 @@ class TestWrapKaraokeText:
         wrapped = video_merge._wrap_karaoke_text(tokens, draw, font, 200)
         for line in wrapped.split(r"\N"):
             plain = video_merge._KARAOKE_TOKEN.sub(lambda m: m.group(2), line)
-            # 単語の途中では割らない
+            # It does not split in the middle of a word.
             assert plain.strip().split(" ")[0] in ("alpha", "beta", "gamma", "delta")
 
     def test_preserves_all_characters(self, draw, font):

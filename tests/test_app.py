@@ -1,4 +1,4 @@
-"""アプリ全体の配線（認証ミドルウェア・公開パス）のテスト。外部サービスへは接続しない。"""
+"""Tests for the wiring of the whole app (auth middleware, public paths). They do not connect to external services."""
 
 import pytest
 
@@ -52,7 +52,7 @@ class TestAuthMiddleware:
 
 class TestQueueNotConfigured:
     def test_post_new_reports_configuration_error_as_json(self, client, monkeypatch):
-        # 認証を通した上で、キュー未設定時に 501 とJSONエラーが返ることを確認する
+        # With authentication passed, confirm that 501 and a JSON error are returned when the queue is not configured.
         monkeypatch.setattr("app.main.get_user_email", lambda: "me@example.com")
         with client.session_transaction() as session:
             session["user_email"] = "me@example.com"
@@ -67,10 +67,10 @@ class TestQueueNotConfigured:
 
 
 class TestServerRoleRouting:
-    """SERVER_ROLE に応じて Blueprint ごと登録されないことを確認する。
+    """Confirm that, depending on SERVER_ROLE, the whole Blueprint is not registered.
 
-    公開サービス上に /tasks/* が存在しないことが分離の目的なので、
-    「401 で拒否される」ではなく「404 でルートが無い」であることを見る。
+    The purpose of the separation is that /tasks/* does not exist on the public service,
+    so this checks for "404, the route does not exist" rather than "rejected with 401".
     """
 
     def test_web_role_does_not_serve_worker_routes(self, monkeypatch):
@@ -88,7 +88,7 @@ class TestServerRoleRouting:
     def test_worker_role_still_serves_worker_routes(self, monkeypatch):
         client = _build_client(monkeypatch, role="worker")
 
-        # OIDC トークンが無いので 401。404 でないことがルート登録の証拠になる。
+        # There is no OIDC token, so 401. That it is not 404 is the evidence that the route is registered.
         assert client.post("/tasks/generate", json={}).status_code == 401
 
     def test_worker_role_keeps_healthz(self, monkeypatch):
@@ -104,11 +104,11 @@ class TestServerRoleRouting:
 
 
 class TestYouTubeEnqueueTarget:
-    """YouTube投稿タスクの宛先が worker であることを確認する。
+    """Confirm that the YouTube upload task is addressed to the worker.
 
-    /tasks/youtube は worker_bp にあり、SERVER_ROLE=web のプロセスには
-    存在しない（TestServerRoleRouting がそれを固定している）。宛先を
-    service_url（Web 面自身）から組み立てると自分の 404 へ投げることになる。
+    /tasks/youtube is in worker_bp and does not exist in a process with
+    SERVER_ROLE=web (TestServerRoleRouting pins that). Building the target from
+    service_url (the web face itself) would send the task to its own 404.
     """
 
     def _build_web_app(self, monkeypatch):
@@ -135,7 +135,7 @@ class TestYouTubeEnqueueTarget:
                 captured["worker_url"] = worker_url
 
         app.queue = FakeQueue()
-        # uploader が None だと 501 で早期に返るため、非 None にしておく。
+        # When uploader is None the handler returns early with 501, so set it to a non-None value.
         app.youtube_uploader = object()
 
         monkeypatch.setattr("app.main.get_user_email", lambda: "me@example.com")

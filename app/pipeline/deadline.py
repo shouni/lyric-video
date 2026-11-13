@@ -1,39 +1,41 @@
-"""ジョブ全体の実行時間に上限を設けるための締切。
+"""A deadline for putting an upper limit on the run time of the whole job.
 
-なぜ要るか — タイムアウトの三段
---------------------------------
+Why it is needed: the three timeout levels
+------------------------------------------
 
-フリート共通の約束として、タイムアウトは 3 つあり、この大小関係を守る。
+As a fleet-wide convention there are three timeouts, and this ordering between them is kept.
 
-    PIPELINE_TIMEOUT  <  dispatch_deadline  <=  Cloud Run の timeout
-       (アプリ)             (タスク)                 (サービス)
+    PIPELINE_TIMEOUT  <  dispatch_deadline  <=  Cloud Run timeout
+        (app)                (task)                (service)
 
-実効上限を決めるのは**いちばん小さい値**で、他は飾りになる。ここで
-PIPELINE_TIMEOUT を**いちばん短く**取るのが要点で、**アプリが自分で先に諦める**ことで
-meta.json に failed を書き、Slack へ通知してから終われる。
+The effective limit is decided by the **smallest value**, and the others are decoration. The point
+is to make PIPELINE_TIMEOUT the **shortest** here: because **the app gives up first by itself**,
+it can write failed to meta.json and notify Slack before it ends.
 
-逆順にすると、先に Cloud Tasks がリクエストを打ち切る。打ち切りはプロセスごと
-SIGTERM なので**失敗ハンドラも Slack 通知も走らない**。lyric-video-queue は
-max_attempts = 1 なので再試行も来ず、meta.json は status: running のまま取り残される。
-「ログに Task failed が出ないまま running で止まっているジョブ」はこれが原因。
+In the reverse order, Cloud Tasks cuts the request off first. The cutoff is a SIGTERM to the whole
+process, so **neither the failure handler nor the Slack notification runs**. lyric-video-queue has
+max_attempts = 1, so no retry comes either, and meta.json is left behind at status: running.
+This is the cause of "a job stopped at running with no Task failed in the logs".
 
-この経路は実際に踏んでいる。source_type=images（キーフレームからスライドショーを
-作る経路）の検証で 1 本打ち切られた。内訳は Whisper large-v3 のアライメントが
-約 8 分半、残り 20 分以上がカラオケ字幕の PNG 描画。
+This path has actually been hit. One job was cut off while verifying source_type=images (the path
+that makes a slideshow from keyframes). The breakdown was about 8 and a half minutes for the
+Whisper large-v3 alignment, and the remaining 20 minutes or more for drawing the karaoke subtitle
+PNGs.
 
-Python 版には長らくこの最上段が無かった。ffmpeg の各ステップには個別のタイムアウトが
-あるが（video_merge._SUBPROCESS_TIMEOUT_SEC）、**合計が上限に収まる保証は無い**。
-個別の上限をいくら足しても「ジョブ全体の上限」にはならない、というのがこのモジュールの
-存在理由。
+For a long time the Python version did not have this top level. Each ffmpeg step has its own
+timeout (video_merge._SUBPROCESS_TIMEOUT_SEC), but **there is no guarantee that the total fits
+within the limit**. However many per-step limits are added up, they do not make a "limit for the
+whole job", and that is the reason this module exists.
 
-なぜ signal.alarm ではないか
-----------------------------
+Why not signal.alarm
+--------------------
 
-signal.alarm はメインスレッドでしか発火しない。Flask のリクエストハンドラは
-gunicorn のワーカースレッド上で動くため、そこで仕掛けても効かない。
-代わりに「締切を持ち回り、各サブプロセスの待ち時間を残り時間で頭打ちにする」方式にした。
-どのスレッドから呼んでも同じように効き、打ち切りが例外として上がるので
-worker.py の既存の except がそのまま failed の記録と Slack 通知を担当できる。
+signal.alarm fires only on the main thread. Flask request handlers run on gunicorn worker threads,
+so setting it there has no effect.
+Instead, the approach is to "carry a deadline around and cap each subprocess's wait at the time
+remaining". It works the same from whichever thread it is called, and the cutoff rises as an
+exception, so the existing except in worker.py can handle recording failed and notifying Slack
+as it is.
 """
 
 from __future__ import annotations
@@ -42,23 +44,24 @@ import time
 
 
 class PipelineTimeout(RuntimeError):
-    """ジョブ全体の制限時間を使い切ったことを表す。
+    """Indicates that the time limit for the whole job has been used up.
 
-    RuntimeError を継承しているのは、worker.py の except Exception が拾って
-    meta.json へ failed を書き Slack に通知する既存の経路にそのまま乗せるため。
+    It inherits from RuntimeError so that it rides, as is, the existing path in which the
+    except Exception in worker.py catches it, writes failed to meta.json and notifies Slack.
     """
 
 
 class Deadline:
-    """生成時点から timeout_sec 後を締切とし、残り時間を配る。
+    """Sets the deadline at timeout_sec after creation and hands out the time remaining.
 
-    time.monotonic を使う。system clock だと NTP の補正で締切が前後しうる。
+    Uses time.monotonic. With the system clock, the deadline can move back and forth with NTP
+    corrections.
     """
 
     def __init__(self, timeout_sec: float) -> None:
         self._timeout_sec = timeout_sec
-        # 0 以下は「上限なし」。ローカルでの長時間デバッグ用の逃げ道で、
-        # 本番では config が既定値を入れるため通らない。
+        # 0 or less means "no limit". It is an escape hatch for long debugging sessions locally,
+        # and is not taken in production because config sets the default value.
         self._expires_at = time.monotonic() + timeout_sec if timeout_sec > 0 else None
 
     @property
@@ -66,26 +69,26 @@ class Deadline:
         return self._expires_at is None
 
     def remaining(self) -> float | None:
-        """残り秒数。上限なしなら None。使い切っていれば 0 以下の値を返す。"""
+        """Seconds remaining. None if there is no limit. Returns a value of 0 or less if used up."""
         if self._expires_at is None:
             return None
         return self._expires_at - time.monotonic()
 
     def check(self, step: str) -> None:
-        """残り時間が尽きていれば PipelineTimeout を送出する。
+        """Raise PipelineTimeout if the time remaining has run out.
 
-        工程と工程の境目で呼ぶ。サブプロセスを起動する直前に残りが 0 なら、
-        起動せずここで落ちるほうが速いし、メッセージも分かりやすい。
+        Called at the boundary between steps. If nothing remains just before starting a subprocess,
+        failing here without starting it is faster, and the message is easier to understand too.
         """
         remaining = self.remaining()
         if remaining is not None and remaining <= 0:
             raise PipelineTimeout(f"pipeline timed out after {self._timeout_sec:.0f}s (before {step})")
 
     def clamp(self, preferred_sec: float, step: str) -> float:
-        """個別ステップの上限を、ジョブ全体の残り時間で頭打ちにする。
+        """Cap a per-step limit at the time remaining for the whole job.
 
-        ステップ側の上限（例: Whisper の 900s）をそのまま使うと、合計がジョブ全体の
-        上限を超えうる。短いほうを採る。
+        Using the step's own limit as is (for example Whisper's 900s) can make the total exceed
+        the limit for the whole job. The shorter of the two is taken.
         """
         self.check(step)
         remaining = self.remaining()

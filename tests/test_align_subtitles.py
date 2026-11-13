@@ -1,6 +1,6 @@
-"""align_subtitles.py の照合・ASS生成ロジックのテスト（Whisper呼び出しは含まない）。
+"""Tests for the matching and ASS generation logic of align_subtitles.py (Whisper calls are not included).
 
-姉妹リポジトリ lyric-video-maker の同名テストと対になっている。
+They are paired with the test of the same name in the sibling repository lyric-video-maker.
 """
 
 import zipfile
@@ -140,7 +140,7 @@ class TestTrimOverlaps:
         assert subs[0].end == 1000
 
     def test_keeps_line_when_next_starts_before_it(self):
-        # 追い越している行を切ると表示長が0以下になるため、そのまま残す
+        # Trimming a line that the next one has overtaken would make its display length 0 or less, so leave it as is.
         subs = self._subs([(1000, 2000, "一"), (500, 3000, "二")])
         al.trim_overlaps(subs)
         assert subs[0].end == 2000
@@ -187,7 +187,7 @@ class TestBuildAlignedSubs:
         assert "Warning" in capsys.readouterr().err
 
     def test_trims_overlap_with_the_next_line(self):
-        # 1行目は 1.0s 終わり + TAIL_MS = 1300ms だが、2行目が 1100ms に始まる
+        # Line 1 ends at 1.0s + TAIL_MS = 1300ms, but line 2 starts at 1100ms.
         orig = self._orig([(0, 1000, "あ"), (1000, 2000, "い")])
         line_map = {0: chars(("あ", 0.5, 1.0)), 1: chars(("い", 1.1, 1.6))}
         result = al.build_aligned_subs(orig, line_map, verbose=False)

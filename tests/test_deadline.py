@@ -1,9 +1,9 @@
-"""ジョブ全体の締切（PIPELINE_TIMEOUT）のテスト。
+"""Tests for the deadline of the whole job (PIPELINE_TIMEOUT).
 
-守りたい性質は 1 つだけ。**アプリが Cloud Tasks より先に諦めて例外を上げる**こと。
-そうすれば worker.py の except が meta.json へ failed を書き Slack へ通知できる。
-先に Cloud Tasks に打ち切られると SIGTERM でプロセスごと消え、何も残らない。
-背景は app/pipeline/deadline.py。
+There is only one property to protect: **the app gives up before Cloud Tasks does and raises an exception**.
+Then the except in worker.py can write failed to meta.json and notify Slack.
+If Cloud Tasks cuts the request off first, SIGTERM removes the whole process and nothing is left.
+The background is in app/pipeline/deadline.py.
 """
 
 import sys
@@ -23,7 +23,7 @@ class TestParseDuration:
         [
             ("25m", 1500.0),
             ("1500s", 1500.0),
-            # 単位なしは秒。Go 実装の表記に揃えつつ、素の数値も受ける。
+            # No unit means seconds. The notation follows the Go implementation, and a bare number is accepted too.
             ("1500", 1500.0),
             ("1h", 3600.0),
             ("500ms", 0.5),
@@ -45,7 +45,7 @@ class TestDeadline:
         deadline = Deadline(0)
         assert deadline.unlimited
         assert deadline.remaining() is None
-        # 上限なしなら check も clamp も素通し。
+        # With no limit, both check and clamp pass through.
         deadline.check("step")
         assert deadline.clamp(300.0, "step") == 300.0
 
@@ -61,13 +61,13 @@ class TestDeadline:
 
     def test_clamp_takes_the_shorter_of_the_two(self):
         deadline = Deadline(5)
-        # ステップ側の上限(900s)より残り(5s)が短いので、残りが採用される。
+        # The remaining time (5s) is shorter than the step's own limit (900s), so the remaining time is used.
         assert deadline.clamp(900.0, "align") <= 5
-        # 残り(5s)よりステップ側(1s)が短ければ、そちらのまま。
+        # When the step's limit (1s) is shorter than the remaining time (5s), it stays as it is.
         assert deadline.clamp(1.0, "probe") == 1.0
 
     def test_clamp_raises_instead_of_returning_zero(self):
-        """使い切ったあとに timeout=0 でサブプロセスを起動させない。"""
+        """Do not let a subprocess start with timeout=0 after the deadline is used up."""
         deadline = Deadline(0.01)
         time.sleep(0.02)
         with pytest.raises(PipelineTimeout):
@@ -75,22 +75,22 @@ class TestDeadline:
 
 
 class TestRunSubprocess:
-    """★ 本丸。以前 proc.wait() には上限が無く、固まったら無限に待っていた。"""
+    """★ The core. proc.wait() used to have no limit, and when the process hung it waited forever."""
 
     def test_kills_a_hanging_subprocess_and_raises(self):
-        # 60 秒眠るだけの子プロセス。締切は 0.3 秒しかないので殺されるはず。
+        # A child process that only sleeps for 60 seconds. The deadline is just 0.3 seconds, so it should be killed.
         cmd = [sys.executable, "-c", "import time; time.sleep(60)"]
         started = time.monotonic()
         with pytest.raises(PipelineTimeout, match="exceeded the pipeline deadline"):
             _run_subprocess(cmd, "burn_subs", Deadline(0.3))
         elapsed = time.monotonic() - started
-        # 60 秒待たずに戻ってきていること（SIGTERM の猶予 10s を足しても十分下）。
+        # It must return without waiting 60 seconds (well below, even with the 10s SIGTERM grace added).
         assert elapsed < 15
 
     def test_does_not_start_when_deadline_already_spent(self):
         deadline = Deadline(0.01)
         time.sleep(0.02)
-        # 起動していれば 5 秒かかるコマンド。起動せず即座に落ちること。
+        # A command that would take 5 seconds if it started. It must fail at once without starting.
         cmd = [sys.executable, "-c", "import time; time.sleep(5)"]
         started = time.monotonic()
         with pytest.raises(PipelineTimeout):
@@ -101,12 +101,12 @@ class TestRunSubprocess:
         _run_subprocess([sys.executable, "-c", "print('ok')"], "align_subtitles", Deadline(30))
 
     def test_still_reports_exit_code_failures(self):
-        """締切とは無関係な失敗が、従来どおり stderr 付きで上がること。"""
+        """A failure unrelated to the deadline must be raised with stderr attached, as before."""
         cmd = [sys.executable, "-c", "import sys; print('boom', file=sys.stderr); sys.exit(3)"]
         with pytest.raises(RuntimeError, match="exit code 3") as excinfo:
             _run_subprocess(cmd, "burn_subs", Deadline(30))
         assert "boom" in str(excinfo.value)
-        # タイムアウトではないので PipelineTimeout であってはならない。
+        # It is not a timeout, so it must not be a PipelineTimeout.
         assert not isinstance(excinfo.value, PipelineTimeout)
 
     def test_unlimited_deadline_waits_normally(self):
@@ -115,8 +115,8 @@ class TestRunSubprocess:
 
 class TestSigkillFallback:
     def test_kills_a_process_that_ignores_sigterm(self, monkeypatch):
-        """SIGTERM を握り潰す子プロセスでも、猶予後の SIGKILL で確実に止まること。"""
-        # 猶予を詰めて、SIGKILL 経路をテスト時間内に通す。
+        """Even a child process that swallows SIGTERM must be reliably stopped by the SIGKILL after the grace period."""
+        # Shorten the grace period so that the SIGKILL path runs within the test time.
         monkeypatch.setattr("app.pipeline.runner._TERMINATE_GRACE_SEC", 0.3)
         script = "import signal, time; signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(60)"
         started = time.monotonic()
@@ -126,7 +126,7 @@ class TestSigkillFallback:
 
 
 class TestConfigInvariant:
-    """★ 三段の大小関係を起動時に検査する。両方の値が見えるのは config だけ。"""
+    """★ Check the three-level ordering at startup. Only config can see both values."""
 
     @pytest.fixture
     def env(self, monkeypatch):
@@ -140,7 +140,7 @@ class TestConfigInvariant:
         assert Config.from_env().pipeline_timeout_sec == 1500.0
 
     def test_default_is_below_the_dispatch_deadline(self, env):
-        """既定値そのものが不変条件を満たしていること。"""
+        """The default value itself must satisfy the invariant."""
         assert Config.from_env().pipeline_timeout_sec < DISPATCH_DEADLINE_SEC
 
     def test_accepts_a_shorter_explicit_value(self, env):
@@ -154,7 +154,10 @@ class TestConfigInvariant:
             Config.from_env()
 
     def test_web_only_role_is_not_checked(self, env):
-        """パイプラインを走らせない役割で落とさない。web だけ起動しない事故を避ける。"""
+        """Do not fail in a role that does not run the pipeline.
+
+        This avoids the accident where only web fails to start.
+        """
         env.setenv("SERVER_ROLE", "web")
         env.setenv("PIPELINE_TIMEOUT", "45m")
         assert Config.from_env().pipeline_timeout_sec == 2700.0
@@ -165,7 +168,7 @@ class TestConfigInvariant:
 
 
 class TestRunnerWiring:
-    """PipelineRunner が締切を実際に組み立てて配っていること。"""
+    """PipelineRunner must actually build the deadline and hand it out."""
 
     def test_run_builds_a_deadline_from_the_configured_timeout(self, monkeypatch):
         from app.domain.task import Task
@@ -199,7 +202,7 @@ class TestRunnerWiring:
         assert captured["unlimited"] is True
 
     def test_video_path_hands_the_deadline_to_video_merge(self, monkeypatch):
-        """source_type=video 側も締切を受け取ること（こちらが ffmpeg を最も長く回す）。"""
+        """The source_type=video side must receive the deadline too (this side runs ffmpeg the longest)."""
         from app.domain.task import Task
         from app.pipeline import runner as runner_mod
         from app.pipeline.runner import PipelineRunner
@@ -227,10 +230,10 @@ class TestRunnerWiring:
 
 
 class TestWorkerRecordsTheTimeout:
-    """★ 目的の確認。打ち切りが failed の記録と Slack 通知まで繋がること。
+    """★ Confirming the purpose. The cutoff must lead all the way to the failed record and the Slack notification.
 
-    これが繋がっていないと、上限を入れた意味が無い（Cloud Tasks に打ち切られるのと
-    同じく、meta.json が running のまま取り残される）。
+    If it does not, there was no point in adding the limit (just as when Cloud Tasks
+    cuts the request off, meta.json is left behind at running).
     """
 
     def test_pipeline_timeout_is_recorded_as_failed_and_notified(self, monkeypatch):
@@ -243,7 +246,7 @@ class TestWorkerRecordsTheTimeout:
         app = create_app()
         app.config.update(TESTING=True)
 
-        # OIDC 検証は別テストの領分なので通す。
+        # OIDC verification belongs to another test, so let it pass.
         monkeypatch.setattr("app.handlers.worker.verify_task_caller", lambda *a, **k: True)
         monkeypatch.setattr("app.handlers.worker._fetch_recipe_for_task", lambda *a, **k: {})
 
@@ -268,9 +271,9 @@ class TestWorkerRecordsTheTimeout:
         response = app.test_client().post("/tasks/generate", json=payload)
 
         assert response.status_code == 500
-        # running を書いたあと failed で上書きされ、running のまま残らないこと。
+        # After running is written it must be overwritten with failed and not stay at running.
         assert updates[0]["status"] == "running"
         assert updates[-1]["status"] == "failed"
         assert "exceeded the pipeline deadline" in updates[-1]["error"]
-        # Slack へ理由が届いていること。
+        # The reason must reach Slack.
         assert notified and "exceeded the pipeline deadline" in notified[0]

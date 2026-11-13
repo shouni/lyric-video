@@ -6,14 +6,15 @@ from dataclasses import dataclass, field
 
 from app.adapters.task_queue import DISPATCH_DEADLINE_SEC
 
-# ジョブ 1 件の実行時間の上限の既定値。フリートの Go 実装（ap-comp / ap-mv / ap-story）が
-# 本番で明示している 25m に揃えてある。dispatch_deadline（30 分）の手前で
-# **アプリが自分から諦める**ための値。理由は app/pipeline/deadline.py。
+# Default upper limit on the run time of one job. It matches the 25m that the fleet's Go
+# implementations (ap-music / ap-mv / ap-story) set explicitly in production. It is the value with
+# which **the app gives up by itself** before dispatch_deadline (30 minutes). The reason is in
+# app/pipeline/deadline.py.
 _DEFAULT_PIPELINE_TIMEOUT = "25m"
 
-# SERVER_ROLE が取りうる値。明示が必須で、未設定は起動時エラーにする。
-# 未設定を「両方」とみなすと、本番の環境変数が 1 つ欠けただけで公開 web 側に
-# /tasks/* が復活してしまう。both はローカル開発でだけ選ぶ。
+# The values SERVER_ROLE can take. It must be set explicitly, and unset is a startup error.
+# If unset were treated as "both", a single missing environment variable in production would bring
+# /tasks/* back on the public web side. both is chosen only for local development.
 SERVER_ROLE_BOTH = "both"
 SERVER_ROLE_WEB = "web"
 SERVER_ROLE_WORKER = "worker"
@@ -23,7 +24,7 @@ _SERVER_ROLES = (SERVER_ROLE_BOTH, SERVER_ROLE_WEB, SERVER_ROLE_WORKER)
 @dataclass
 class Config:
     service_url: str
-    # server_role はこのプロセスが担う役割。空なら両方を提供する。
+    # server_role is the role this process takes on: one of SERVER_ROLE_*. from_env rejects an unset value.
     server_role: str
     port: str
     project_id: str
@@ -31,25 +32,26 @@ class Config:
     queue_id: str
     worker_url: str
     task_audience_url: str
-    # かつて SERVICE_ACCOUNT_EMAIL 1 つが兼ねていた 3 つの役割。本来別の主体なので分けてある。
-    # task_caller: 投入するタスクの oidcToken.serviceAccountEmail に指定する caller SA（web）
+    # The three roles that a single SERVICE_ACCOUNT_EMAIL once covered. They are really different
+    # principals, so they are separated.
+    # task_caller: the caller SA set in oidcToken.serviceAccountEmail of the tasks that are enqueued (web)
     task_caller_service_account_email: str
-    # allowed_task: worker が受け付ける caller SA の許可リスト（worker）
+    # allowed_task: the allowlist of caller SAs that the worker accepts (worker)
     allowed_task_service_accounts: list[str]
-    # signing: GCS 署名付き URL の署名者。IAM SignBlob で自分を借用するため、
-    # **そのプロセス自身の実行 SA** でなければならない（web）。
+    # signing: the signer of GCS signed URLs. It impersonates itself through IAM SignBlob, so it
+    # must be **the runtime SA of that process itself** (web).
     signing_service_account_email: str
     gcs_bucket: str
     gcs_output_prefix: str
     slack_webhook_url: str
     whisper_model: str
-    # ジョブ1件(ダウンロード〜字幕生成〜焼き込み〜アップロード)の実行時間の上限。
-    # 0以下は無制限。詳細は app/pipeline/deadline.py。
+    # Upper limit on the run time of one job (download, subtitle generation, burn-in, upload).
+    # 0 or less means unlimited. Details are in app/pipeline/deadline.py.
     pipeline_timeout_sec: float
-    # video合成モードのWhisperモデル。曲全体を1本で強制アライメントするため、
-    # Cloud Runのメモリと処理時間に収まる小さめのモデルを既定にしている。
+    # Whisper model for the video compositing mode. The whole song is force-aligned in one pass,
+    # so the default is a smaller model that fits in Cloud Run's memory and processing time.
     video_whisper_model: str
-    # video合成モード(source_type=video)でap-mv/ap-musicの成果物を参照するバケット名
+    # Names of the buckets that hold the artifacts of ap-mv/ap-music. Both source types read from them.
     ap_mv_bucket: str
     ap_music_bucket: str
     # OAuth2
@@ -60,28 +62,28 @@ class Config:
     youtube_refresh_token: str
     allowed_emails: list[str] = field(default_factory=list)
     allowed_domains: list[str] = field(default_factory=list)
-    # M2M (サーバー間通信) 用OIDC許可リスト
+    # OIDC allowlist for M2M (server-to-server) calls
     allowed_m2m_service_accounts: list[str] = field(default_factory=list)
 
     def serves_web(self) -> bool:
-        """この役割がWeb面(/, /jobs, OAuth)を提供するかを返す。"""
+        """Return whether this role serves the web side (/, /jobs, OAuth)."""
         return self.server_role in (SERVER_ROLE_BOTH, SERVER_ROLE_WEB)
 
     def serves_worker(self) -> bool:
-        """この役割がWorker面(/tasks/*)を提供するかを返す。"""
+        """Return whether this role serves the worker side (/tasks/*)."""
         return self.server_role in (SERVER_ROLE_BOTH, SERVER_ROLE_WORKER)
 
     def is_secure_url(self) -> bool:
-        """サービスURLがHTTPSかどうかを返す。"""
+        """Return whether the service URL is HTTPS."""
         return self.service_url.startswith("https://")
 
     def default_output_prefix(self) -> str:
-        """設定済みのGCSバケットと出力接頭辞からデフォルト出力先を作る。"""
+        """Build the default output location from the configured GCS bucket and output prefix."""
         return f"gs://{self.gcs_bucket}/{self.gcs_output_prefix}" if self.gcs_bucket else ""
 
     @classmethod
     def from_env(cls) -> Config:
-        """環境変数からアプリケーション設定を読み込む。"""
+        """Load the application settings from environment variables."""
         server_role = os.getenv("SERVER_ROLE", "").strip().lower()
         if server_role not in _SERVER_ROLES:
             raise RuntimeError(
@@ -114,8 +116,8 @@ class Config:
             ap_music_bucket=os.getenv("AP_MUSIC_BUCKET", "ap-music"),
             google_client_id=os.getenv("GOOGLE_CLIENT_ID", ""),
             google_client_secret=os.getenv("GOOGLE_CLIENT_SECRET", ""),
-            # Worker面だけを提供するプロセスはセッションもOAuthも使わないため、
-            # 使いもしない認証情報へのアクセス権を配らずに済むよう必須にしない。
+            # A process that serves only the worker side uses neither sessions nor OAuth, so this
+            # is not required, which avoids handing out access to credentials it never uses.
             session_secret=(
                 _require_env("SESSION_SECRET")
                 if server_role in (SERVER_ROLE_BOTH, SERVER_ROLE_WEB)
@@ -129,21 +131,21 @@ class Config:
 
 
 def _task_caller_email() -> str:
-    """投入するタスクに指定する caller SA。"""
+    """The caller SA set on the tasks that are enqueued."""
     return os.getenv("TASK_CALLER_SERVICE_ACCOUNT_EMAIL", "").strip()
 
 
 def _signing_email() -> str:
-    """GCS 署名付き URL の署名者（＝このプロセス自身の実行 SA）。"""
+    """The signer of GCS signed URLs (that is, the runtime SA of this process itself)."""
     return os.getenv("SIGNING_SERVICE_ACCOUNT_EMAIL", "").strip()
 
 
 def _allowed_task_service_accounts(server_role: str) -> list[str]:
-    """worker が受け付ける caller SA の許可リスト。
+    """The allowlist of caller SAs that the worker accepts.
 
-    空のまま worker を起動すると verify_task_caller が全リクエストを拒否し、
-    Cloud Tasks 側はリトライを使い切ってタスクを捨てる。設定漏れがタスクの静かな
-    消失として現れないよう、起動時に落とす。
+    If the worker starts with this empty, verify_task_caller refuses every request, and Cloud Tasks
+    uses up its retries and discards the task. So that a missing setting does not show up as tasks
+    silently disappearing, startup fails instead.
     """
     allowed = _split_env("ALLOWED_TASK_SERVICE_ACCOUNTS")
     if not allowed and server_role in (SERVER_ROLE_BOTH, SERVER_ROLE_WORKER):
@@ -156,12 +158,12 @@ _UNIT_SECONDS = {"ms": 0.001, "s": 1.0, "m": 60.0, "h": 3600.0}
 
 
 def parse_duration(text: str) -> float:
-    """`25m` / `1500s` / `1500` のような表記を秒へ変換する。
+    """Convert a notation such as `25m` / `1500s` / `1500` to seconds.
 
-    Go 実装（ap-comp / ap-mv / ap-story）の PIPELINE_TIMEOUT が `25m` 形式なので、
-    同じ値をそのまま書けるようにしてある。Terraform 側（ap-infra）が全アプリへ
-    同じ表記で env を配れるほうが、フリート全体を見たときに差が読める。
-    単位を省いた数値は秒として扱う。
+    PIPELINE_TIMEOUT in the Go implementations (ap-music / ap-mv / ap-story) is in the `25m` form,
+    so this lets the same value be written as is. When the Terraform side (ap-infra) can hand the
+    env to every app in the same notation, differences are readable when looking at the whole fleet.
+    A number without a unit is treated as seconds.
     """
     match = _DURATION.match(text)
     if not match:
@@ -170,15 +172,16 @@ def parse_duration(text: str) -> float:
 
 
 def _pipeline_timeout_sec(server_role: str) -> float:
-    """ジョブ 1 件の実行時間の上限を読み、三段の大小関係を起動時に検査する。
+    """Read the upper limit on the run time of one job, and check the three-level ordering at startup.
 
-    ★ PIPELINE_TIMEOUT < dispatch_deadline を**ここで機械的に確かめる**。
-      両方の値が同時に見えるのはこの関数だけで、逆転していると
-      「Cloud Tasks が先に打ち切る → 失敗も通知も残らない」という、
-      いちばん気付きにくい壊れ方をする（app/pipeline/deadline.py 参照）。
+    ★ PIPELINE_TIMEOUT < dispatch_deadline is **verified mechanically here**.
+      This function is the only place where both values are visible at the same time, and if they
+      are reversed it breaks in the way that is hardest to notice: "Cloud Tasks cuts it off first,
+      so neither the failure nor a notification is left" (see app/pipeline/deadline.py).
 
-      検査するのは worker 面を持つ役割のときだけ。パイプラインを走らせないプロセスに
-      とっては無関係な値で、そこで落とすと web だけが起動しない事故になる。
+      The check runs only for a role that has the worker side. For a process that does not run the
+      pipeline the value is irrelevant, and failing there would be an accident in which only web
+      does not start.
     """
     raw = os.getenv("PIPELINE_TIMEOUT", "").strip() or _DEFAULT_PIPELINE_TIMEOUT
     seconds = parse_duration(raw)
@@ -194,7 +197,7 @@ def _pipeline_timeout_sec(server_role: str) -> float:
 
 
 def _require_env(key: str) -> str:
-    """必須環境変数を取得し、未設定なら例外を送出する。"""
+    """Get a required environment variable, and raise an exception if it is not set."""
     value = os.getenv(key, "").strip()
     if not value:
         raise ValueError(f"{key} environment variable is required")
@@ -202,5 +205,5 @@ def _require_env(key: str) -> str:
 
 
 def _split_env(key: str) -> list[str]:
-    """カンマ区切りの環境変数を小文字のリストへ変換する。"""
+    """Convert a comma-separated environment variable to a list of lowercase strings."""
     return [v.strip().lower() for v in os.getenv(key, "").split(",") if v.strip()]

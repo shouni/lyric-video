@@ -18,10 +18,10 @@ logger = logging.getLogger(__name__)
 
 # app/ directory where align_subtitles.py and burn_subs.py live
 _SCRIPTS_DIR = Path(__file__).resolve().parent.parent
-# 失敗時に例外メッセージへ含める標準エラーの行数
+# Number of stderr lines included in the exception message on failure
 _STDERR_TAIL_LINES = 5
-# 打ち切ったサブプロセスが SIGTERM で畳まれるのを待つ時間。これを過ぎたら SIGKILL。
-# ffmpeg は終了時に出力ファイルを閉じる後始末をするので、まず穏当に止める。
+# How long to wait for a terminated subprocess to shut down on SIGTERM. Past this, SIGKILL.
+# ffmpeg cleans up on exit by closing its output file, so it is stopped gently first.
 _TERMINATE_GRACE_SEC = 10.0
 
 
@@ -36,17 +36,17 @@ class PipelineRunner:
         self._ap_mv_bucket = ap_mv_bucket
         self._ap_music_bucket = ap_music_bucket
         self._video_whisper_model = video_whisper_model
-        # 0 以下は上限なし。既定を 0 にしてあるのは、この引数を渡さない
-        # 既存の呼び出し（テストや将来の別経路）の挙動を変えないため。
-        # 本番の値は config が入れる（PIPELINE_TIMEOUT、既定 25m）。
+        # 0 or less means no limit. The default is 0 so that the behaviour of existing calls that
+        # do not pass this argument (tests, and other paths in the future) does not change.
+        # The production value is set by config (PIPELINE_TIMEOUT, default 25m).
         self._pipeline_timeout_sec = pipeline_timeout_sec
 
     def run(self, task: Task) -> str:
-        """入力素材を取得し、字幕生成・焼き込み・アップロードまでの全工程を実行する。
+        """Fetch the input material and run every step through subtitle generation, burn-in and upload.
 
-        ★ ジョブ全体の締切をここで 1 つ作り、以降の全工程へ持ち回る。
-          個別ステップの上限（Whisper の 900s など）をいくら足しても「ジョブ全体の
-          上限」にはならないので、上から被せる形にしている（deadline.py 参照）。
+        ★ One deadline for the whole job is created here and carried through every later step.
+          However many per-step limits (such as Whisper's 900s) are added up, they do not make a
+          "limit for the whole job", so this one is laid over them from above (see deadline.py).
         """
         deadline = Deadline(self._pipeline_timeout_sec)
         if task.source_type == "video":
@@ -54,7 +54,7 @@ class PipelineRunner:
         return self._run_image_slideshow(task, deadline)
 
     def _run_video_merge(self, task: Task, deadline: Deadline) -> str:
-        """ap-mvの完成動画とap-musicの楽曲を合成する経路(静止画スライドショーを使わない)。"""
+        """The path that combines ap-mv's finished video with ap-music's song (no still-image slideshow)."""
         with tempfile.TemporaryDirectory(prefix="lyric_video_merge_") as work_dir:
             work = Path(work_dir)
             output_path = work / "output.mp4"
@@ -70,15 +70,15 @@ class PipelineRunner:
             )
 
             output_uri = f"{task.output_prefix.rstrip('/')}/{task.job_id}/output.mp4"
-            # アップロードの手前で締切を見る。使い切っていればここで諦めたほうが、
-            # 中途半端なオブジェクトを GCS に残さずに済む。
+            # Check the deadline just before the upload. If it is used up, giving up here avoids
+            # leaving a half-written object in GCS.
             deadline.check("upload output")
             logger.info("Uploading output to %s", output_uri)
             gcs.upload(str(output_path), output_uri)
             return output_uri
 
     def _run_image_slideshow(self, task: Task, deadline: Deadline) -> str:
-        """静止画キーフレーム+カラオケ字幕焼き込みでMVを生成する既存経路。"""
+        """The existing path that generates an MV from still keyframes with karaoke subtitles burned in."""
         audio_url = music_audio_uri(self._ap_music_bucket, task.music_job_id)
         keyframes_url = f"gs://{self._ap_mv_bucket}/veo/jobs/{task.ap_mv_job_id}/keyframes.zip"
 
@@ -117,14 +117,14 @@ class PipelineRunner:
                     Path(p).unlink(missing_ok=True)
 
     def _run_align(self, audio: str, keyframes: str, output_ass: str, model: str, deadline: Deadline) -> None:
-        """音声と元字幕からカラオケタイミング付きASS字幕を生成する。"""
+        """Generate ASS subtitles with karaoke timing from the audio and the original subtitles."""
         script = str(_SCRIPTS_DIR / "align_subtitles.py")
         cmd = [sys.executable, script, audio, keyframes, output_ass, "--model", model]
         logger.info("Running align_subtitles model=%s", model)
         _run_subprocess(cmd, "align_subtitles", deadline)
 
     def _run_burn(self, audio: str, keyframes: str, output: str, subs: str, deadline: Deadline) -> None:
-        """ASS字幕をキーフレーム画像へ焼き込み、MP4を生成する。"""
+        """Burn the ASS subtitles into the keyframe images and generate an MP4."""
         script = str(_SCRIPTS_DIR / "burn_subs.py")
         cmd = [sys.executable, script, audio, keyframes, output, "--subs", subs]
         logger.info("Running burn_subs")
@@ -132,7 +132,7 @@ class PipelineRunner:
 
 
 def _stream(pipe, log_fn, sink: deque | None = None):
-    """サブプロセスの出力を1行ずつ指定されたログ関数へ流す。"""
+    """Pass the subprocess output, line by line, to the given log function."""
     for line in iter(pipe.readline, ""):
         line = line.rstrip()
         log_fn(line)
@@ -141,10 +141,10 @@ def _stream(pipe, log_fn, sink: deque | None = None):
 
 
 def _terminate(proc: subprocess.Popen) -> None:
-    """サブプロセスを穏当に、駄目なら強制的に停止する。
+    """Stop a subprocess gently, and forcibly if that does not work.
 
-    まず SIGTERM を送る。ffmpeg も Whisper も終了時に出力ファイルを閉じる後始末をするので、
-    いきなり SIGKILL すると tmpfs に壊れたファイルが残る。猶予を過ぎたら SIGKILL。
+    SIGTERM is sent first. Both ffmpeg and Whisper clean up on exit by closing their output files,
+    so an immediate SIGKILL leaves corrupt files on tmpfs. Past the grace period, SIGKILL.
     """
     proc.terminate()
     try:
@@ -156,17 +156,19 @@ def _terminate(proc: subprocess.Popen) -> None:
 
 
 def _run_subprocess(cmd: list[str], name: str, deadline: Deadline) -> None:
-    """サブプロセスを実行し、標準出力と標準エラーをログへ転送する。
+    """Run a subprocess and forward its stdout and stderr to the log.
 
-    失敗時は終了コードだけでなく標準エラーの末尾も例外メッセージへ含める。この文言は
-    meta.json の error とSlack通知にそのまま出るため、ログを見に行かずに
-    「歌詞とWhisperの文字数が一致しない」等の原因が分かるようにする。
+    On failure, the exception message includes the tail of stderr as well as the exit code. This
+    text appears as is in the error of meta.json and in the Slack notification, so that a cause
+    such as "the character counts of the lyrics and Whisper do not match" can be understood without
+    going to the logs.
 
-    ★ 待ち時間はジョブ全体の残り時間で頭打ちにする。以前は proc.wait() に上限が無く、
-      align_subtitles や burn_subs が固まると**そのまま無限に待った**。実際には
-      Cloud Tasks が 30 分で打ち切るので無限には見えないが、打ち切られるとプロセスごと
-      SIGTERM で消えるため、失敗の記録も Slack 通知も残らなかった（deadline.py 参照）。
-      ここで先に諦めれば、PipelineTimeout が worker.py まで上がって failed を書ける。
+    ★ The wait is capped at the time remaining for the whole job. Previously proc.wait() had no
+      limit, and when align_subtitles or burn_subs hung it **simply waited forever**. In practice
+      Cloud Tasks cuts it off at 30 minutes, so it does not look infinite, but when it is cut off
+      the whole process disappears with SIGTERM, so neither a record of the failure nor a Slack
+      notification was left (see deadline.py). Giving up here first lets PipelineTimeout rise to
+      worker.py, which can then write failed.
     """
     deadline.check(name)
     stderr_tail: deque[str] = deque(maxlen=_STDERR_TAIL_LINES)
@@ -180,8 +182,8 @@ def _run_subprocess(cmd: list[str], name: str, deadline: Deadline) -> None:
         except subprocess.TimeoutExpired:
             logger.error("%s exceeded the pipeline deadline, terminating", name)
             _terminate(proc)
-            # パイプが閉じてリーダースレッドが EOF を見るのを待つ。join しないまま
-            # Popen の with を抜けると、閉じた fd を読み続けるスレッドが残る。
+            # Wait for the pipes to close and the reader threads to see EOF. Leaving the Popen
+            # with block without joining leaves threads that keep reading a closed fd.
             t_out.join()
             t_err.join()
             raise PipelineTimeout(f"{name} exceeded the pipeline deadline") from None
