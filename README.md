@@ -25,6 +25,20 @@ and JSON responses, so an AI agent can operate it through an MCP gateway (see "E
 > **Status:** The Cloud Run deployment of this service was shut down on 2026-08-13.
 > The repository is kept as a reference. The sections on deployment describe how the service ran while it was live.
 
+### Where to look
+
+The service no longer runs, so the code is here to be read. These are the parts worth opening first.
+Each one records a decision and the reason for it in its comments.
+
+| What | Where | Why it is worth reading |
+| --- | --- | --- |
+| A deadline for the whole job | `app/pipeline/deadline.py`, `tests/test_deadline.py` | A job was once cut off by Cloud Tasks and left at `running` with no failure record and no notification. The module docstring explains why per-step timeouts could not prevent that, and why the fix carries one deadline through every step instead of using `signal.alarm`. The tests kill a hanging subprocess, including one that ignores SIGTERM. |
+| Refusing to start on a bad configuration | `_pipeline_timeout_sec` and `from_env` in `app/config.py` | A worker does not start when `PIPELINE_TIMEOUT` is not shorter than the Cloud Tasks deadline, because that ordering fails in the way that is hardest to notice. An unset `SERVER_ROLE` is also a startup error, so one missing variable cannot put `/tasks/*` back on the public service. |
+| One image, two roles | `create_app` in `app/main.py` | The web service and the worker run the same image. The Blueprint for the side a process does not serve is never registered, so the routes do not exist there at all. |
+| A layout owned by another service | `app/domain/music_layout.py`, `TestMusicLayout` in `tests/test_domain.py` | The paths of the song files are decided by ap-music, not here. This service once kept the old paths after ap-music changed them and could not fetch its sources. The test pins the paths so the same drift fails in CI. |
+| One token check for two callers | `app/adapters/oidc.py` | Cloud Tasks and machine-to-machine callers go through the same OIDC verification and differ only in their allowlist. |
+| Subtitles that overlap on purpose, and where that breaks | `trim_overlaps` in `app/align_subtitles.py` | Each line gets a 300 ms tail, which is harmless when one line is drawn at a time and shows two stacked lines under libass. The lines are trimmed before the ASS file is written. |
+
 ---
 
 ## 🏗 Architecture
